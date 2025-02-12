@@ -1,7 +1,8 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect } from 'react';
 import NoteInput from './NoteInput';
 import { Note } from '../lib/notesDB';
 import '../styles/tab-manager.css';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Tab {
   id: string;
@@ -25,14 +26,77 @@ export interface TabManagerRef {
   updateTab: (note: Note) => void;
 }
 
+const CACHE_KEY = 'tabManager_cache';
+
 const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   onChangeStatus,
   onContentChange,
 }, ref) => {
-  const [tabs, setTabs] = useState<Tab[]>([
-    { id: 'new', title: '', content: '', isNew: true }
-  ]);
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    const cached = localStorage.getItem(CACHE_KEY);
+    return cached ? JSON.parse(cached) : [{ id: `new-${uuidv4()}`, title: '', content: '', isNew: true }];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(tabs));
+  }, [tabs]);
+
   const [activeTabId, setActiveTabId] = useState('new');
+
+  const handleSaveComplete = (tabId: string, savedNote: Note) => {
+    setTabs(prevTabs => prevTabs.map(tab =>
+      tab.id === tabId ? {
+        ...tab,
+        id: savedNote.id,
+        title: savedNote.title,
+        content: savedNote.content,
+        version: savedNote.version,
+        createdAt: savedNote.createdAt,
+        updatedAt: savedNote.updatedAt,
+        syncStatus: 'synced' as const,
+        isNew: false
+      } : tab
+    ));
+
+    if (activeTabId === tabId) {
+      setActiveTabId(savedNote.id);
+    }
+  };
+
+  const closeTab = (tabId: string) => {
+    const tabToClose = tabs.find(tab => tab.id === tabId);
+    if (!tabToClose) return;
+
+    const newTabs = tabs.filter(tab => tab.id !== tabId);
+    
+    if (newTabs.length === 0) {
+      const newTabId = `new-${uuidv4()}`;
+      newTabs.push({ 
+        id: newTabId, 
+        title: '', 
+        content: '', 
+        isNew: true 
+      });
+    }
+    
+    setTabs(newTabs);
+    
+    if (activeTabId === tabId) {
+      setActiveTabId(newTabs[0].id);
+    }
+  };
+
+  const addNewTab = () => {
+    const newTabId = `new-${uuidv4()}`;
+    const newTab = { 
+      id: newTabId, 
+      title: '', 
+      content: '', 
+      isNew: true 
+    };
+    setTabs(prevTabs => [...prevTabs, newTab]);
+    setActiveTabId(newTabId);
+  };
 
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
@@ -41,13 +105,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       if (existingTab) {
         setActiveTabId(note.id);
       } else {
-        if (note.id === 'new' && tabs.some(tab => tab.id === 'new')) {
-          setActiveTabId('new');
-          return;
-        }
-
+        const tabId = note.id === 'new' ? `new-${uuidv4()}` : note.id;
+        
         const newTab: Tab = {
-          id: note.id,
+          id: tabId,
           title: note.title,
           content: note.content,
           attachments: note.attachments,
@@ -58,12 +119,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           syncStatus: note.syncStatus
         };
         setTabs(prevTabs => [...prevTabs, newTab]);
-        setActiveTabId(note.id);
+        setActiveTabId(tabId);
       }
     },
     updateTab: (savedNote: Note) => {
       setTabs(prevTabs => prevTabs.map(tab =>
-        (tab.id === savedNote.id || (tab.isNew && tab.id === 'new')) ? {
+        tab.id === activeTabId ? {
           ...tab,
           id: savedNote.id,
           title: savedNote.title,
@@ -71,25 +132,16 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           version: savedNote.version,
           createdAt: savedNote.createdAt,
           updatedAt: savedNote.updatedAt,
-          syncStatus: 'synced',
+          syncStatus: 'synced' as const,
           isNew: false
         } : tab
       ));
 
-      if (activeTabId === 'new') {
+      if (activeTabId.startsWith('new-')) {
         setActiveTabId(savedNote.id);
       }
     }
   }));
-
-  const closeTab = (tabId: string) => {
-    if (tabs.length === 1) return;
-    const newTabs = tabs.filter(tab => tab.id !== tabId);
-    setTabs(newTabs);
-    if (activeTabId === tabId) {
-      setActiveTabId(newTabs[0].id);
-    }
-  };
 
   const handleTabClick = (tabId: string) => {
     setActiveTabId(tabId);
@@ -99,7 +151,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     setTabs(prevTabs => prevTabs.map(tab =>
       tab.id === tabId ? { ...tab, title } : tab
     ));
-    onContentChange(tabId, title, tabs.find(tab => tab.id === tabId)?.content || '', tabs.find(tab => tab.id === tabId)?.version, tabs.find(tab => tab.id === tabId)?.id);
+    
+    const currentTab = tabs.find(tab => tab.id === tabId);
+    if (!currentTab) return;
+
+    const noteId = currentTab.isNew ? undefined : currentTab.id;
+    
+    onContentChange(
+      tabId, 
+      title, 
+      currentTab.content, 
+      currentTab.version,
+      noteId
+    );
   };
 
   const handleContentChange = (tabId: string, content: string) => {
@@ -110,34 +174,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         syncStatus: 'pending' 
       } : tab
     ));
+
     const currentTab = tabs.find(tab => tab.id === tabId);
+    if (!currentTab) return;
+
+    const noteId = currentTab.isNew ? undefined : currentTab.id;
+    
     onContentChange(
-      tabId, 
-      currentTab?.title || '', 
+      tabId,
+      currentTab.title,
       content,
-      currentTab?.version,
-      currentTab?.isNew ? undefined : currentTab?.id
+      currentTab.version,
+      noteId
     );
-  };
-
-  const handleSaveComplete = (tabId: string, savedNote: Note) => {
-    setTabs(prevTabs => prevTabs.map(tab =>
-      (tab.id === tabId || (tab.isNew && tab.id === 'new')) ? {
-        ...tab,
-        id: savedNote.id,
-        title: savedNote.title,
-        content: savedNote.content,
-        version: savedNote.version,
-        createdAt: savedNote.createdAt,
-        updatedAt: savedNote.updatedAt,
-        syncStatus: 'synced',
-        isNew: false
-      } : tab
-    ));
-
-    if (tabId === 'new') {
-      setActiveTabId(savedNote.id);
-    }
   };
 
   return (
@@ -150,42 +199,50 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             onClick={() => handleTabClick(tab.id)}
           >
             <span>{tab.isNew ? 'New Note' : (tab.title || 'Untitled')}</span>
-            {tabs.length > 1 && (
-              <button 
-                className="close-tab"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
-              >
-                ×
-              </button>
-            )}
+            <button 
+              className="close-tab"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeTab(tab.id);
+              }}
+            >
+              ×
+            </button>
           </div>
         ))}
+        <button 
+          className="new-tab-button"
+          onClick={addNewTab}
+          title="New Tab"
+        >
+          +
+        </button>
       </div>
       <div className="tab-content">
-        {tabs.map(tab => (
-          activeTabId === tab.id && (
+        {(() => {
+          const activeTab = tabs.find(tab => tab.id === activeTabId);
+          if (!activeTab) return null;
+          
+          return (
             <NoteInput
-              key={tab.id}
-              tabId={tab.id}
+              key={activeTab.id}
+              tabId={activeTab.id}
               note={{
-                id: tab.id === 'new' ? undefined : tab.id,
-                title: tab.title,
-                content: tab.content,
-                attachments: tab.attachments,
-                version: tab.version,
-                createdAt: tab.createdAt,
-                updatedAt: tab.updatedAt,
-                syncStatus: tab.syncStatus
+                id: activeTab.id === 'new' ? undefined : activeTab.id,
+                title: activeTab.title,
+                content: activeTab.content,
+                attachments: activeTab.attachments,
+                version: activeTab.version,
+                createdAt: activeTab.createdAt,
+                updatedAt: activeTab.updatedAt,
+                syncStatus: activeTab.syncStatus
               }}
-              onTitleChange={(title) => handleTitleChange(tab.id, title)}
-              onContentChange={(content) => handleContentChange(tab.id, content)}
-              onSaveComplete={(savedNote) => handleSaveComplete(tab.id, savedNote)}
+              onTitleChange={(title) => handleTitleChange(activeTab.id, title)}
+              onContentChange={(content) => handleContentChange(activeTab.id, content)}
+              onSaveComplete={(savedNote) => handleSaveComplete(activeTab.id, savedNote)}
             />
-          )
-        ))}
+          );
+        })()}
       </div>
     </div>
   );

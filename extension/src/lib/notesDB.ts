@@ -283,4 +283,14 @@ export class NotesDB {
       console.log('NotesDB: Database connection closed');
     }
   }
+
+  static async clearCache(): Promise<void> {
+    localStorage.removeItem('tabManager_cache');
+  }
+
+  static async restoreFromCache(): Promise<Note[]> {
+    const cached = localStorage.getItem('tabManager_cache');
+    if (!cached) return [];
+    return JSON.parse(cached);
+  }
 }

@@ -31,19 +31,35 @@
 }
 
 .close-tab {
-  background: none;
-  border: none;
   padding: 2px 6px;
+  background: transparent;
+  border: none;
+  color: #666;
   cursor: pointer;
-  font-size: 16px;
-  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 8px;
 }
 
 .close-tab:hover {
-  opacity: 1;
+  color: #000;
 }
 
 .tab-content {
   flex: 1;
   overflow: auto;
+}
+
+.new-tab-button {
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.new-tab-button:hover {
+  color: #000;
 } 

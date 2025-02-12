@@ -57,7 +57,7 @@ const Popup: React.FC = () => {
       tabId, 
       title, 
       content,
-      id: noteId,
+      id: noteId === 'new' ? undefined : noteId,
       version,
       syncStatus: 'pending'
     });
@@ -69,6 +69,16 @@ const Popup: React.FC = () => {
       tabManagerRef.current.addTab(note);
     }
     setIsNotesManagerOpen(false);
+  };
+
+  const handleClose = () => {
+    if (hasUnsavedChanges) {
+      if (window.confirm('You have unsaved changes. Are you sure you want to close?')) {
+        window.close();
+      }
+    } else {
+      window.close();
+    }
   };
 
   // Create ref for TabManager to access its methods
@@ -88,7 +98,7 @@ const Popup: React.FC = () => {
           <ActionButton type="menu" onClick={() => setIsMenuOpen(true)} title="Menu" />
           <ActionButton 
             type="close" 
-            onClick={() => {}} 
+            onClick={handleClose}
             title="Close"
             hasUnsavedChanges={hasUnsavedChanges}
           />
