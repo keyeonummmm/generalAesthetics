@@ -14,6 +14,7 @@ interface Tab {
   createdAt?: string;
   updatedAt?: string;
   syncStatus?: 'pending' | 'synced';
+  noteId?: string;
 }
 
 interface TabManagerProps {
@@ -24,6 +25,14 @@ interface TabManagerProps {
 export interface TabManagerRef {
   addTab: (note: Note) => void;
   updateTab: (note: Note) => void;
+  getActiveTab: () => {
+    id: string;
+    title: string;
+    content: string;
+    version?: number;
+    noteId?: string;
+  } | null;
+  updateTabContent: (id: string, title: string, content: string) => void;
 }
 
 interface TabManagerCache {
@@ -152,7 +161,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           version: note.version,
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
-          syncStatus: note.syncStatus
+          syncStatus: note.syncStatus,
+          noteId: note.id
         };
         setTabs(prevTabs => [...prevTabs, newTab]);
         setActiveTabId(tabId);
@@ -176,6 +186,37 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       if (activeTabId.startsWith('new-')) {
         setActiveTabId(savedNote.id);
       }
+    },
+    getActiveTab: () => {
+      const activeTab = tabs.find(tab => tab.id === activeTabId);
+      return activeTab ? {
+        id: activeTab.id,
+        title: activeTab.title,
+        content: activeTab.content,
+        version: activeTab.version || undefined,
+        noteId: activeTab.noteId || undefined
+      } : null;
+    },
+    updateTabContent: (tabId: string, title: string, content: string) => {
+      setTabs(prevTabs => prevTabs.map(tab =>
+        tab.id === tabId
+          ? { 
+              ...tab, 
+              title, 
+              content, 
+              syncStatus: 'pending',
+              noteId: tab.noteId,
+              version: tab.version
+            }
+          : tab
+      ));
+      
+      const tab = tabs.find(t => t.id === tabId);
+      if (onContentChange) {
+        onContentChange(tabId, title, content, tab?.version, tab?.noteId);
+      }
+
+      setActiveTabId(tabId);
     }
   }));
 

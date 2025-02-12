@@ -3,7 +3,8 @@
 // Check if the note has unsaved changes and if so, show a warning before closing the popup.
 
 import React from 'react';
-import { Note } from '../lib/notesDB';
+import { Note, NoteAttachment } from '../lib/notesDB';
+import { NotesDB } from '../lib/notesDB';
 
 interface NoteInputProps {
   // Core note data
@@ -59,6 +60,95 @@ const NoteInput: React.FC<NoteInputProps> = ({
       month: 'short',
       day: 'numeric'
     });
+  };
+
+  const handleFileUpload = async (file: File) => {
+    try {
+      const attachment: NoteAttachment = {
+        type: 'file',
+        url: URL.createObjectURL(file),
+        title: file.name,
+        size: file.size,
+        mimeType: file.type,
+        createdAt: new Date().toISOString()
+      };
+      
+      if (note.id) {
+        await NotesDB.addAttachment(note.id, attachment);
+      }
+      // If no note.id, the attachment will be saved when the note is created
+    } catch (error) {
+      console.error('Failed to handle file upload:', error);
+      throw error;
+    }
+  };
+
+  const handleImageUpload = async (image: File) => {
+    try {
+      // Create image preview
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const imageUrl = e.target?.result as string;
+        
+        // Insert image into content
+        const imageMarkdown = `\n![${image.name}](${imageUrl})\n`;
+        onContentChange(note.content + imageMarkdown);
+        
+        // Add as attachment
+        const attachment: NoteAttachment = {
+          type: 'image',
+          url: imageUrl,
+          title: image.name,
+          size: image.size,
+          mimeType: image.type,
+          createdAt: new Date().toISOString()
+        };
+        
+        if (note.id) {
+          await NotesDB.addAttachment(note.id, attachment);
+        }
+      };
+      reader.readAsDataURL(image);
+    } catch (error) {
+      console.error('Failed to handle image upload:', error);
+      throw error;
+    }
+  };
+
+  const handleUrlCapture = async () => {
+    try {
+      // Get current tab URL
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab.url) return;
+      
+      const url = tab.url;
+      const title = tab.title || url;
+      
+      // Format URL for display
+      const maxLength = 50;
+      const displayUrl = url.length > maxLength 
+        ? url.substring(0, maxLength) + '...'
+        : url;
+      
+      // Insert formatted URL into content
+      const urlMarkdown = `\n[${title}](${url})\n`;
+      onContentChange(note.content + urlMarkdown);
+      
+      // Add as attachment
+      const attachment: NoteAttachment = {
+        type: 'url',
+        url: url,
+        title: title,
+        createdAt: new Date().toISOString()
+      };
+      
+      if (note.id) {
+        await NotesDB.addAttachment(note.id, attachment);
+      }
+    } catch (error) {
+      console.error('Failed to handle URL capture:', error);
+      throw error;
+    }
   };
 
   return (
