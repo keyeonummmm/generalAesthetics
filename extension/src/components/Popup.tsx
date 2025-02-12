@@ -10,6 +10,7 @@ import { Note } from '../lib/notesDB';
 import { AttachmentMenu } from './AttachmentMenu';
 import { NotesDB } from '../lib/notesDB';
 import { NoteAttachment } from '../lib/notesDB';
+import { TabManagerRef } from './TabManager';
 
 const Popup: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -57,14 +58,25 @@ const Popup: React.FC = () => {
     version?: number,
     noteId?: string
   ) => {
-    setActiveNote({ 
+    console.log('[Popup] handleContentChange called with:', {
+      tabId,
+      title,
+      contentLength: content.length,
+      version,
+      noteId
+    });
+    
+    console.log('[Popup] Previous activeNote state:', activeNote);
+    
+    setActiveNote(prev => ({ 
+      ...prev,
       tabId, 
       title, 
       content,
-      id: noteId === 'new' ? undefined : noteId,
+      id: noteId,
       version,
       syncStatus: 'pending'
-    });
+    }));
   };
 
   const handleEditNote = (note: Note) => {
@@ -86,9 +98,7 @@ const Popup: React.FC = () => {
   };
 
   // Create ref for TabManager to access its methods
-  const tabManagerRef = React.useRef<{ addTab: (note: Note) => void; updateTab: (note: Note) => void; 
-    getActiveTab: () => { id: string; title: string; content: string; version: number; noteId?: string; }; 
-    updateTabContent: (id: string, title: string, content: string) => void } | null>(null);
+  const tabManagerRef = React.useRef<TabManagerRef | null>(null);
 
   const handleFileUpload = async (file: File) => {
     try {
@@ -171,18 +181,37 @@ const Popup: React.FC = () => {
       const title = tab.title || url;
       const urlMarkdown = `\n[${title}](${url})\n`;
       
-      // Get current active tab content
       const activeTab = tabManagerRef.current?.getActiveTab();
       if (!activeTab) return;
 
+      // Update tab content directly, don't modify content in state update
       tabManagerRef.current?.updateTabContent(
         activeTab.id,
         activeTab.title,
         activeTab.content + urlMarkdown
       );
+
+      // Don't add URL again in state update
+      setActiveNote(prev => ({
+        ...prev,
+        syncStatus: 'pending' as const,
+        id: prev.id,
+        version: prev.version
+      }));
     } catch (error) {
       console.error('Failed to capture URL:', error);
       throw error;
+    }
+  };
+
+  const handleNoteDelete = (noteId: string) => {
+    // Reset activeNote state if the deleted note was active
+    if (activeNote.id === noteId) {
+      setActiveNote({
+        tabId: 'new',
+        title: '',
+        content: '',
+      });
     }
   };
 
@@ -236,20 +265,21 @@ const Popup: React.FC = () => {
           content={activeNote.content}
           existingNoteId={activeNote.id}
           currentVersion={activeNote.version}
+          tabId={activeNote.tabId}
           onSaveComplete={(savedNote) => {
+            const currentTabId = activeNote.tabId; // Capture current tabId
             setHasUnsavedChanges(false);
-            // Update active note with all saved note properties
             setActiveNote(prev => ({
               ...prev,
               id: savedNote.id,
               version: savedNote.version,
               title: savedNote.title || prev.title,
               syncStatus: 'synced',
-              tabId: prev.tabId // Preserve tabId
+              tabId: prev.tabId
             }));
-            // Update tab manager with saved note
+            
             if (tabManagerRef.current) {
-              tabManagerRef.current.updateTab(savedNote);
+              tabManagerRef.current.updateTabWithId(currentTabId, savedNote);
             }
           }}
         />
@@ -259,6 +289,8 @@ const Popup: React.FC = () => {
         isOpen={isNotesManagerOpen}
         onClose={() => setIsNotesManagerOpen(false)}
         onEditNote={handleEditNote}
+        activeNoteId={activeNote.id}
+        onNoteDelete={handleNoteDelete}
       />
     </div>
   );

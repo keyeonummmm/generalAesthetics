@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Note, NotesDB } from '../lib/notesDB';
 import '../styles/notes-manager.css';
+import { TabManagerRef } from './TabManager';
 
 interface NotesManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onEditNote: (note: Note) => void;
+  activeNoteId?: string;
+  onNoteDelete?: (noteId: string) => void;
 }
 
 interface NoteItemProps {
@@ -58,9 +61,12 @@ const NoteItem: React.FC<NoteItemProps> = ({ note, onEdit, onDelete }) => {
 export const NotesManager: React.FC<NotesManagerProps> = ({ 
   isOpen, 
   onClose,
-  onEditNote
+  onEditNote,
+  activeNoteId,
+  onNoteDelete
 }) => {
   const [notes, setNotes] = useState<Note[]>([]);
+  const tabManagerRef = useRef<TabManagerRef | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,12 +86,32 @@ export const NotesManager: React.FC<NotesManagerProps> = ({
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteNote = async (noteId: string) => {
     try {
-      await NotesDB.deleteNote(id);
-      setNotes(notes.filter(note => note.id !== id));
+      // Check if note is open in any tab
+      const isNoteOpen = activeNoteId === noteId;
+      
+      if (isNoteOpen) {
+        if (!window.confirm('This note is currently open in a tab. Are you sure you want to delete it?')) {
+          return;
+        }
+        // Clean the tab content first
+        if (tabManagerRef.current) {
+          tabManagerRef.current.removeTabContent(noteId);
+        }
+      }
+
+      await NotesDB.deleteNote(noteId);
+      
+      // Update UI
+      setNotes(notes.filter(note => note.id !== noteId));
+      
+      // Notify parent component
+      if (onNoteDelete) {
+        onNoteDelete(noteId);
+      }
     } catch (error) {
-      console.error('Error deleting note:', error);
+      console.error('Failed to delete note:', error);
     }
   };
 
@@ -112,7 +138,7 @@ export const NotesManager: React.FC<NotesManagerProps> = ({
                 key={note.id}
                 note={note}
                 onEdit={handleEdit}
-                onDelete={handleDelete}
+                onDelete={handleDeleteNote}
               />
             ))
           )}

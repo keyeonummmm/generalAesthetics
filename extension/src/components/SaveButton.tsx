@@ -9,6 +9,7 @@ interface SaveButtonProps {
   content: string;
   existingNoteId?: string;
   currentVersion?: number;
+  tabId: string;
   onSaveComplete?: (note: Note) => void;
   onVersionConflict?: () => void;
 }
@@ -18,30 +19,31 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
   content,
   existingNoteId,
   currentVersion,
+  tabId,
   onSaveComplete,
   onVersionConflict
 }) => {
   const [isSaving, setIsSaving] = useState(false);
 
-  // Add debug logging for props
-  React.useEffect(() => {
-    console.log('[SaveButton] Props received:', {
-      hasExistingNoteId: !!existingNoteId,
-      existingNoteId,
-      currentVersion,
-      title,
-      contentLength: content.length
-    });
-  }, [existingNoteId, currentVersion, title, content]);
+  console.log('[SaveButton] Props received:', {
+    title,
+    contentLength: content.length,
+    existingNoteId,
+    currentVersion,
+    hasExistingNoteId: !!existingNoteId
+  });
 
   const handleSave = async () => {
     if (!title.trim() && !content.trim()) {
       return;
     }
 
+    if (isSaving) {
+      return;
+    }
+
     setIsSaving(true);
     
-    // Add more detailed logging
     console.log('[SaveButton] Save operation details:', {
       type: existingNoteId ? 'update' : 'create',
       existingNoteId,

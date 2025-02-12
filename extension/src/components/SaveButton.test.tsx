@@ -116,6 +116,7 @@ describe('SaveButton', () => {
         <SaveButton
           title="Test Note"
           content="Test Content"
+          tabId="test-tab-id"
           onSaveComplete={onSaveComplete}
         />
       );
@@ -141,6 +142,7 @@ describe('SaveButton', () => {
         <SaveButton
           title=""
           content="Test Content"
+          tabId="test-tab-id"
           onSaveComplete={onSaveComplete}
         />
       );
@@ -164,6 +166,7 @@ describe('SaveButton', () => {
         <SaveButton
           title=""
           content=""
+          tabId="test-tab-id"
           onSaveComplete={onSaveComplete}
         />
       );
@@ -188,6 +191,7 @@ describe('SaveButton', () => {
         <SaveButton
           title="Updated Title"
           content="Updated Content"
+          tabId="test-tab-id"
           existingNoteId={existingNote.id}
           onSaveComplete={onSaveComplete}
         />
@@ -224,6 +228,7 @@ describe('SaveButton', () => {
         <SaveButton
           title="Test Note"
           content="Test Content"
+          tabId="test-tab-id"
         />
       );
 
