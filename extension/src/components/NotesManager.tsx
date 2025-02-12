@@ -19,7 +19,7 @@ interface NoteItemProps {
 
 const NoteItem: React.FC<NoteItemProps> = ({ note, onEdit, onDelete }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const previewContent = note.content.slice(0, 50) + (note.content.length > 50 ? '...' : '');
+  const previewContent = note.content.slice(0, 30) + (note.content.length > 30 ? '...' : '');
 
   const handleDelete = () => {
     if (window.confirm('Are you sure you want to delete this note?')) {

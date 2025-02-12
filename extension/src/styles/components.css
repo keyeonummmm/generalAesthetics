@@ -23,19 +23,19 @@
 
 /* Base Theme Classes */
 .theme-light {
-  --bg-color: var(--light-bg);
-  --text-color: var(--light-text);
-  --border-color: var(--light-border);
-  --hover-bg: var(--light-hover);
-  --hover-text: var(--light-hover-text);
+  --bg-color: var(--light-bg) !important;
+  --text-color: var(--light-text) !important;
+  --border-color: var(--light-border) !important;
+  --hover-bg: var(--light-hover) !important;
+  --hover-text: var(--light-hover-text) !important;
 }
 
 .theme-dark {
-  --bg-color: var(--dark-bg);
-  --text-color: var(--dark-text);
-  --border-color: var(--dark-border);
-  --hover-bg: var(--dark-hover);
-  --hover-text: var(--dark-hover-text);
+  --bg-color: var(--dark-bg) !important;
+  --text-color: var(--dark-text) !important;
+  --border-color: var(--dark-border) !important;
+  --hover-bg: var(--dark-hover) !important;
+  --hover-text: var(--dark-hover-text) !important;
 }
 
 /* Popup Container */
@@ -229,21 +229,6 @@
 
 .popup-container {
   animation: fadeIn var(--transition-speed) ease;
-}
-
-/* Dark Mode Media Query */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-  }
-  
-  .popup-container:not(.theme-light) {
-    --bg-color: var(--dark-bg);
-    --text-color: var(--dark-text);
-    --border-color: var(--dark-border);
-    --hover-bg: var(--dark-hover);
-    --hover-text: var(--dark-hover-text);
-  }
 }
 
 /* Menu Styles */

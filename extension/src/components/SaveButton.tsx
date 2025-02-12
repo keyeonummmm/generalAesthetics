@@ -25,14 +25,6 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
 }) => {
   const [isSaving, setIsSaving] = useState(false);
 
-  console.log('[SaveButton] Props received:', {
-    title,
-    contentLength: content.length,
-    existingNoteId,
-    currentVersion,
-    hasExistingNoteId: !!existingNoteId
-  });
-
   const handleSave = async () => {
     if (!title.trim() && !content.trim()) {
       return;
@@ -43,34 +35,15 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
     }
 
     setIsSaving(true);
-    
-    console.log('[SaveButton] Save operation details:', {
-      type: existingNoteId ? 'update' : 'create',
-      existingNoteId,
-      currentVersion,
-      title,
-      contentLength: content.length
-    });
 
     try {
       let note: Note;
       
       if (existingNoteId) {
-        console.log('[SaveButton] Updating existing note:', {
-          id: existingNoteId,
-          version: currentVersion
-        });
         note = await NotesDB.updateNote(existingNoteId, title, content, currentVersion);
       } else {
-        console.log('[SaveButton] Creating new note (no existingNoteId provided)');
         note = await NotesDB.createNote(title, content);
       }
-
-      console.log('[SaveButton] Save operation successful:', {
-        id: note.id,
-        version: note.version,
-        wasUpdate: !!existingNoteId
-      });
       
       if (onSaveComplete) {
         onSaveComplete(note);
@@ -82,7 +55,6 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
         if (error.message === 'Note not found') {
           alert('Unable to update note: Note not found');
         } else if (error.message === 'Version conflict - note was modified elsewhere') {
-          console.log('[SaveButton] Version conflict detected');
           if (onVersionConflict) {
             onVersionConflict();
           } else {

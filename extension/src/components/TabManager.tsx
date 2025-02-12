@@ -202,12 +202,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             content: tab.content, // Keep the content
             isNew: true, // Mark as new since it's no longer linked to a note
             syncStatus: 'pending' as const,
-            // Remove all note-specific metadata by not including them:
-            // - noteId
-            // - version
-            // - createdAt
-            // - updatedAt
-            // - attachments
           };
 
           // If this is the active tab, notify parent of changes
@@ -275,10 +269,13 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
-      const existingTab = tabs.find(tab => tab.id === note.id);
+      // Check for existing tab by both id and noteId
+      const existingTab = tabs.find(tab => 
+        tab.id === note.id || tab.noteId === note.id
+      );
       
       if (existingTab) {
-        setActiveTabId(note.id);
+        setActiveTabId(existingTab.id); // Use existing tab's id
       } else {
         const tabId = note.id === 'new' ? `new-${uuidv4()}` : note.id;
         
@@ -291,7 +288,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           version: note.version,
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
-          syncStatus: note.syncStatus || 'pending' as const,
+          syncStatus: 'synced' as const, // Set as synced since it's from database
           noteId: note.id
         };
         setTabs(prevTabs => [...prevTabs, newTab]);

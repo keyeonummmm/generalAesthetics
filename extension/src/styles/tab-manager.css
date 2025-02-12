@@ -62,4 +62,12 @@
 
 .new-tab-button:hover {
   color: #000;
+}
+
+.tab span {
+  max-width: 15ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
 } 

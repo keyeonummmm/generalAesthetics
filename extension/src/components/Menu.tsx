@@ -11,22 +11,15 @@ interface MenuProps {
 }
 
 const Menu: React.FC<MenuProps> = ({ isOpen, onClose }) => {
-  const [theme, setTheme] = useState(ThemeManager.getInitialTheme());
+  const [theme, setTheme] = useState(ThemeManager.getSavedTheme());
 
   useEffect(() => {
-    ThemeManager.setupSystemThemeListener();
+    ThemeManager.initialize();
   }, []);
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     ThemeManager.setTheme(newTheme);
     setTheme(newTheme);
-    
-    // Immediately refresh theme when switching to system
-    if (newTheme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      document.documentElement.classList.remove('theme-light', 'theme-dark');
-      document.documentElement.classList.add(`theme-${systemTheme}`);
-    }
   };
 
   if (!isOpen) return null;

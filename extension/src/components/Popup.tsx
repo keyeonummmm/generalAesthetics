@@ -32,8 +32,8 @@ const Popup: React.FC = () => {
   
   // Initialize theme when component mounts
   useEffect(() => {
-    const initialTheme = ThemeManager.getInitialTheme();
-    ThemeManager.setTheme(initialTheme);
+    const savedTheme = ThemeManager.getSavedTheme();
+    ThemeManager.setTheme(savedTheme);
 
     // Add beforeunload handler
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -58,16 +58,6 @@ const Popup: React.FC = () => {
     version?: number,
     noteId?: string
   ) => {
-    console.log('[Popup] handleContentChange called with:', {
-      tabId,
-      title,
-      contentLength: content.length,
-      version,
-      noteId
-    });
-    
-    console.log('[Popup] Previous activeNote state:', activeNote);
-    
     setActiveNote(prev => ({ 
       ...prev,
       tabId, 
