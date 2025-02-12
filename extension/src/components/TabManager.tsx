@@ -26,6 +26,11 @@ export interface TabManagerRef {
   updateTab: (note: Note) => void;
 }
 
+interface TabManagerCache {
+  tabs: Tab[];
+  activeTabId: string;
+}
+
 const CACHE_KEY = 'tabManager_cache';
 
 const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
@@ -34,14 +39,45 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 }, ref) => {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const cached = localStorage.getItem(CACHE_KEY);
-    return cached ? JSON.parse(cached) : [{ id: `new-${uuidv4()}`, title: '', content: '', isNew: true }];
+    if (cached) {
+      try {
+        const parsedCache: TabManagerCache = JSON.parse(cached);
+        if (Array.isArray(parsedCache.tabs) && parsedCache.tabs.length > 0) {
+          return parsedCache.tabs;
+        }
+      } catch (e) {
+        console.error('Failed to parse tab cache:', e);
+      }
+    }
+    const initialTab = { id: `new-${uuidv4()}`, title: '', content: '', isNew: true };
+    return [initialTab];
+  });
+
+  const [activeTabId, setActiveTabId] = useState(() => {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      try {
+        const parsedCache: TabManagerCache = JSON.parse(cached);
+        if (Array.isArray(parsedCache.tabs) && 
+            parsedCache.tabs.length > 0 && 
+            parsedCache.activeTabId &&
+            parsedCache.tabs.some(tab => tab.id === parsedCache.activeTabId)) {
+          return parsedCache.activeTabId;
+        }
+      } catch (e) {
+        console.error('Failed to parse tab cache for activeTabId:', e);
+      }
+    }
+    return tabs[0].id;
   });
 
   useEffect(() => {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(tabs));
-  }, [tabs]);
-
-  const [activeTabId, setActiveTabId] = useState('new');
+    const cache: TabManagerCache = {
+      tabs,
+      activeTabId
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  }, [tabs, activeTabId]);
 
   const handleSaveComplete = (tabId: string, savedNote: Note) => {
     setTabs(prevTabs => prevTabs.map(tab =>
