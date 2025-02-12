@@ -1,0 +1,236 @@
+<project>
+    <metadata>
+        <name>general_aesthetics</name>
+        <version>1.0.0</version>
+        <status>development</status>
+    </metadata>
+
+    <overview>
+        <description>
+            A public notepad application enabling users to create, share and discuss notes.
+            Features include:
+            - Public note creation and viewing
+            - Comment system on notes
+            - Browser extension integration
+            - User authentication
+            - Creator-only note modification
+            - Real-time updates
+        </description>
+        
+        <objectives>
+            - Provide seamless note-taking experience across web and browser extension
+            - Enable public discourse through commenting
+            - Ensure data security and user privacy
+            - Maintain high performance and reliability
+        </objectives>
+    </overview>
+
+    <technical_specifications>
+        <architecture>
+            <components>
+                - Browser Extension: Entry point for quick note creation provide both off-line and on-line note creation.
+                - Web Application: Main interface for note management
+                - Backend Server: RESTful API handling business logic
+                - Database: Persistent storage for users and notes
+            </components>
+
+            <data_flow>
+                1. User authentication via OAuth 2.0
+                2. Secure API communication using JWT
+                3. Real-time updates via WebSocket
+                4. CDN for static asset delivery
+            </data_flow>
+        </architecture>
+
+        <dependencies>
+            <frontend>
+                - TypeScript 4.x
+                - React 18.x
+                - Redux for state management
+                - Jest for testing
+                - Material-UI for components
+            </frontend>
+            
+            <backend>
+                - TypeScript 4.x
+                - Node.js 16.x
+                - Express.js
+                - PostgreSQL 14.x
+                - Jest for testing
+            </backend>
+
+            <infrastructure>
+                - Docker 24.x
+                - Docker Compose 2.x
+                - Docker volumes for persistence
+                - Docker networks for container communication
+                - Docker multi-stage builds for optimization
+            </infrastructure>
+        </dependencies>
+
+        <docker_configuration>
+            <containers>
+                - Frontend Container:
+                    * Node.js base image
+                    * Multi-stage build for production
+                    * Development mode with hot-reload
+                    * Exposed port 3000
+                
+                - Backend Container:
+                    * Node.js base image
+                    * Development and production configs
+                    * Exposed port 8080
+                    * Environment variables injection
+                
+                - Database Container:
+                    * PostgreSQL 14 image
+                    * Persistent volume mapping
+                    * Exposed port 5432
+                    * Initial schema setup
+                
+                - Redis Container (optional):
+                    * Redis latest image
+                    * Session storage
+                    * Caching layer
+                    * Exposed port 6379
+            </containers>
+
+            <development_setup>
+                - Hot-reload for frontend and backend
+                - Volume mounts for source code
+                - Development-specific environment variables
+                - Debug port mappings
+                - Local database persistence
+            </development_setup>
+
+            <production_setup>
+                - Multi-stage builds for minimal image size
+                - Production optimization flags
+                - Security hardening
+                - External volume management
+                - Container health checks
+            </production_setup>
+
+            <networking>
+                - Internal Docker network for container communication
+                - Exposed ports for external access
+                - Reverse proxy configuration
+                - SSL termination
+            </networking>
+        </docker_configuration>
+
+        <security_requirements>
+            - HTTPS encryption for all communications
+            - JWT token-based authentication
+            - Input sanitization
+            - XSS protection
+            - CSRF protection
+            - Rate limiting
+            - Regular security audits
+        </security_requirements>
+    </technical_specifications>
+
+    <project_structure>
+        <frontend>
+            extension/
+                manifest.json        # Extension configuration
+                package.json         # Extension configuration
+                background.ts       # Background service worker
+                src/
+                    components/   # React components
+                    pages/       # Page components
+                    hooks/      # Custom React hooks
+                    store/     # Redux store
+                    api/      # API clients
+                    utils/   # Utility functions
+            
+            webApp/
+                src/
+                    components/   # React components
+                    pages/       # Page components
+                    hooks/      # Custom React hooks
+                    store/     # Redux store
+                    api/      # API clients
+                    utils/   # Utility functions
+                    types/  # TypeScript definitions
+                public/    # Static assets
+                tests/    # Test files
+        </frontend>
+
+        <backend>
+            src/
+                controllers/    # Request handlers
+                routes/        # API routes
+                models/       # Data models
+                services/    # Business logic
+                utils/      # Utility functions
+                middleware/ # Custom middleware
+                types/     # TypeScript definitions
+            database/
+                migrations/   # Database migrations
+                seeds/       # Seed data
+            tests/          # Test files
+            docs/          # API documentation
+        </backend>
+
+        <docker>
+            Dockerfile.webapp          # Frontend container configuration
+            Dockerfile.extension        # Extension container configuration
+            Dockerfile.backend           # Backend container configuration
+            docker-compose.yml           # Container orchestration
+            docker-compose.dev.yml       # Development overrides
+            docker-compose.prod.yml      # Production overrides
+            .dockerignore               # Docker build exclusions
+            docker/
+                nginx/                  # Nginx configuration for production
+                scripts/               # Docker helper scripts
+                config/               # Container configurations
+        </docker>
+    </project_structure>
+
+    <development_guidelines>
+        <coding_standards>
+            - ESLint configuration
+            - Prettier for formatting
+            - TypeScript strict mode
+            - Component documentation
+            - API documentation using OpenAPI
+        </coding_standards>
+
+        <git_workflow>
+            - Feature branch workflow
+            - Pull request reviews
+            - Conventional commits
+            - Semantic versioning
+        </git_workflow>
+
+        <testing_strategy>
+            - Unit tests for utilities and services
+            - Integration tests for API endpoints
+            - E2E tests for critical flows
+            - Minimum 80% coverage requirement
+        </testing_strategy>
+    </development_guidelines>
+
+    <deployment>
+        <environments>
+            - Development
+            - Staging
+            - Production
+        </environments>
+
+        <ci_cd>
+            - GitHub Actions for automation
+            - Automated testing
+            - Automated deployment
+            - Environment-specific configurations
+        </ci_cd>
+
+        <monitoring>
+            - Error tracking with Sentry
+            - Performance monitoring
+            - Usage analytics
+            - Server health checks
+        </monitoring>
+    </deployment>
+</project>

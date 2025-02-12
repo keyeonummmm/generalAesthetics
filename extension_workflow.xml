@@ -1,0 +1,27 @@
+<step 1>
+    User install the extension from the web store.
+</step>
+
+<step 2>
+    User clicks the extension icon and the extension popup will show.
+</step>
+
+<step 3>
+    User can create a note on the extension popup, chose to save it or not on the local machine.
+</step>
+
+<step 4>
+    User can click the Word button on the extension popup to publish, view and comment on all the public notes on the web app.
+</step>
+
+<step 5>
+    User can click the fork button on the extension popup to manage their own notes that been saved on the local machine.
+</step>
+
+<step 5>
+    The extension will record the user's offline note and sync it to the web app after the user is online.
+</step>
+
+<step 6>
+    User can update or delete their own notes on the web app, or delete the notes on the local machine.
+</step>

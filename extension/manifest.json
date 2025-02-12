@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "General Aesthetics Notes",
+  "version": "1.0.0",
+  "description": "A browser extension for quick note-taking",
+  
+  "action": {
+    "default_popup": "popup.html"
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "http://localhost:8080/*"
+  ],
+
+  "icons": {
+    "128": "icons/icon128.png"
+  }
+} 
