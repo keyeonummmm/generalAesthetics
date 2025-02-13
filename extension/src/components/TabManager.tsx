@@ -299,16 +299,44 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
-      // Check for existing tab by both id and noteId
+      // First check if note is already open
       const existingTab = tabs.find(tab => 
         tab.id === note.id || tab.noteId === note.id
       );
       
       if (existingTab) {
-        setActiveTabId(existingTab.id); // Use existing tab's id
+        setActiveTabId(existingTab.id);
+        return;
+      }
+
+      // Look for an empty tab to reuse
+      const emptyTab = tabs.find(tab => 
+        tab.isNew && 
+        !tab.title && 
+        !tab.content && 
+        !tab.noteId
+      );
+
+      if (emptyTab) {
+        // Reuse the empty tab
+        setTabs(prevTabs => prevTabs.map(tab =>
+          tab.id === emptyTab.id ? {
+            ...tab,
+            title: note.title,
+            content: note.content,
+            attachments: note.attachments,
+            isNew: false,
+            version: note.version,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            syncStatus: 'synced' as const,
+            noteId: note.id
+          } : tab
+        ));
+        setActiveTabId(emptyTab.id);
       } else {
+        // Create new tab if no empty tab available
         const tabId = note.id === 'new' ? `new-${uuidv4()}` : note.id;
-        
         const newTab: Tab = {
           id: tabId,
           title: note.title,
@@ -318,7 +346,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           version: note.version,
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
-          syncStatus: 'synced' as const, // Set as synced since it's from database
+          syncStatus: 'synced' as const,
           noteId: note.id
         };
         setTabs(prevTabs => [...prevTabs, newTab]);
