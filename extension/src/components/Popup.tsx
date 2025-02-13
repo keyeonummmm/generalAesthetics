@@ -257,7 +257,7 @@ const Popup: React.FC = () => {
           currentVersion={activeNote.version}
           tabId={activeNote.tabId}
           onSaveComplete={(savedNote) => {
-            const currentTabId = activeNote.tabId; // Capture current tabId
+            const currentTabId = activeNote.tabId;
             setHasUnsavedChanges(false);
             setActiveNote(prev => ({
               ...prev,
@@ -281,6 +281,7 @@ const Popup: React.FC = () => {
         onEditNote={handleEditNote}
         activeNoteId={activeNote.id}
         onNoteDelete={handleNoteDelete}
+        tabManagerRef={tabManagerRef}
       />
     </div>
   );

@@ -36,6 +36,7 @@ export interface TabManagerRef {
   updateTabContent: (id: string, title: string, content: string) => void;
   removeTabContent: (noteId: string) => void;
   updateTabWithId: (tabId: string, note: Note) => void;
+  isNoteOpenInAnyTab: (noteId: string) => boolean;
 }
 
 interface TabManagerCache {
@@ -112,7 +113,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     setTabs(prevTabs => prevTabs.map(tab =>
       tab.id === tabId ? {
         ...tab,
-        noteId: savedNote.id,  // Explicitly set the noteId
+        noteId: savedNote.id,
         title: savedNote.title,
         content: savedNote.content,
         version: savedNote.version,
@@ -130,33 +131,46 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         savedNote.title,
         savedNote.content,
         savedNote.version,
-        savedNote.id  // Pass the noteId
+        savedNote.id
       );
     }
   };
 
   const closeTab = (tabId: string) => {
-    const tabToClose = tabs.find(tab => tab.id === tabId);
-    if (!tabToClose) return;
-
-    const newTabs = tabs.filter(tab => tab.id !== tabId);
+    console.log('Closing tab:', tabId);
     
-    if (newTabs.length === 0) {
-      const newTabId = `new-${uuidv4()}`;
-      newTabs.push({ 
-        id: newTabId, 
-        title: '', 
-        content: '', 
-        isNew: true,
-        syncStatus: 'pending' as const
-      });
-    }
-    
-    setTabs(newTabs);
-    
-    if (activeTabId === tabId) {
-      setActiveTabId(newTabs[0].id);
-    }
+    setTabs(prevTabs => {
+      const newTabs = prevTabs.filter(tab => tab.id !== tabId);
+      
+      if (newTabs.length === 0) {
+        const newTabId = `new-${uuidv4()}`;
+        console.log('Creating new empty tab:', newTabId);
+        newTabs.push({ 
+          id: newTabId, 
+          title: '', 
+          content: '', 
+          isNew: true,
+          syncStatus: 'pending' as const
+        });
+      }
+      
+      // Update active tab if needed
+      if (activeTabId === tabId) {
+        console.log('Updating active tab to:', newTabs[0].id);
+        setActiveTabId(newTabs[0].id);
+        // Notify parent of content change
+        const newActiveTab = newTabs[0];
+        onContentChange(
+          newActiveTab.id,
+          newActiveTab.title,
+          newActiveTab.content,
+          newActiveTab.version,
+          newActiveTab.noteId
+        );
+      }
+      
+      return newTabs;
+    });
   };
 
   const addTab = (note?: Note) => {
@@ -192,34 +206,50 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const removeTabContent = (noteId: string) => {
+    console.log('removeTabContent called for noteId:', noteId);
+    
     setTabs(prevTabs => {
       return prevTabs.map(tab => {
         if (tab.noteId === noteId || tab.id === noteId) {
-          // Create a cleaned version of the tab
-          const cleanedTab: Tab = {
-            id: tab.id, // Keep the original tab ID
-            title: tab.title, // Keep the title for reference
-            content: tab.content, // Keep the content
-            isNew: true, // Mark as new since it's no longer linked to a note
-            syncStatus: 'pending' as const,
-          };
-
-          // If this is the active tab, notify parent of changes
           if (tab.id === activeTabId) {
-            onContentChange(
-              cleanedTab.id,
-              cleanedTab.title,
-              cleanedTab.content,
-              undefined, // version is now undefined
-              undefined  // noteId is now undefined
-            );
+            // For active tab: Clear content but keep the tab
+            console.log('Cleaning content for active tab:', tab.id);
+            return {
+              ...tab,
+              id: tab.id, // Keep existing tab ID
+              title: '',
+              content: '',
+              noteId: undefined, // Clear the noteId
+              version: undefined,
+              attachments: undefined,
+              isNew: true,
+              syncStatus: 'pending' as const,
+            };
+          } else {
+            // For inactive tabs: Remove them in a separate operation
+            console.log('Marking inactive tab for removal:', tab.id);
+            // Use setTimeout to avoid recursive loop
+            setTimeout(() => {
+              setTabs(current => current.filter(t => t.id !== tab.id));
+            }, 0);
+            return tab;
           }
-
-          return cleanedTab;
         }
         return tab;
       });
     });
+
+    // Notify parent of changes if it's the active tab
+    const activeTab = tabs.find(tab => tab.id === activeTabId);
+    if (activeTab && (activeTab.noteId === noteId || activeTab.id === noteId)) {
+      onContentChange(
+        activeTabId,
+        '',
+        '',
+        undefined,
+        undefined
+      );
+    }
   };
 
   const removeTabByNoteId = (noteId: string) => {
@@ -371,6 +401,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         }
         return tab;
       }));
+    },
+    isNoteOpenInAnyTab: (noteId: string) => {
+      return tabs.some(tab => tab.noteId === noteId || tab.id === noteId);
     },
   }));
 

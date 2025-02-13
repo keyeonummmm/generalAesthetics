@@ -1,7 +1,3 @@
-// NoteInput.tsx
-// This component is responsible for the note input field.
-// Check if the note has unsaved changes and if so, show a warning before closing the popup.
-
 import React from 'react';
 import { NoteAttachment } from '../lib/notesDB';
 

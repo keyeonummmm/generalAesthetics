@@ -9,6 +9,7 @@ interface NotesManagerProps {
   onEditNote: (note: Note) => void;
   activeNoteId?: string;
   onNoteDelete?: (noteId: string) => void;
+  tabManagerRef: React.RefObject<TabManagerRef>;
 }
 
 interface NoteItemProps {
@@ -63,10 +64,10 @@ export const NotesManager: React.FC<NotesManagerProps> = ({
   onClose,
   onEditNote,
   activeNoteId,
-  onNoteDelete
+  onNoteDelete,
+  tabManagerRef
 }) => {
   const [notes, setNotes] = useState<Note[]>([]);
-  const tabManagerRef = useRef<TabManagerRef | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -89,16 +90,22 @@ export const NotesManager: React.FC<NotesManagerProps> = ({
   const handleDeleteNote = async (noteId: string) => {
     try {
       // Check if note is open in any tab
-      const isNoteOpen = activeNoteId === noteId;
+      const isNoteOpen = tabManagerRef.current?.isNoteOpenInAnyTab(noteId);
       
       if (isNoteOpen) {
-        if (!window.confirm('This note is currently open in a tab. Are you sure you want to delete it?')) {
+        if (!window.confirm('This note is currently open in editor. Are you sure to delete it?')) {
           return;
         }
-        // Clean the tab content first
-        if (tabManagerRef.current) {
-          tabManagerRef.current.removeTabContent(noteId);
+        
+        // Check if tabManagerRef exists and has current value
+        if (!tabManagerRef?.current) {
+          console.error('TabManager reference not available');
+          return;
         }
+
+        // Clean all tabs containing this note
+        console.log('Calling removeTabContent for noteId:', noteId);
+        tabManagerRef.current.removeTabContent(noteId);
       }
 
       await NotesDB.deleteNote(noteId);

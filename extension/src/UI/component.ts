@@ -1,5 +1,3 @@
-// This file is responsible for managing the theme of the extension.
-
 type Theme = 'light' | 'dark' | 'system';
 
 export class ThemeManager {
