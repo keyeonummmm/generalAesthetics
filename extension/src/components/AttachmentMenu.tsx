@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import '../styles/attachment-menu.css';
+import '../styles/components/attachment-menu.css';
 
 interface AttachmentMenuProps {
   isOpen: boolean;

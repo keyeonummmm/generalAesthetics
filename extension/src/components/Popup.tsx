@@ -4,7 +4,7 @@ import { SaveButton } from './SaveButton';
 import { ActionButton } from './ActionButton';
 import Menu from './Menu';
 import { ThemeManager } from '../UI/component';
-import '../styles/components.css';
+import '../styles/components/components.css';
 import { NotesManager } from './NotesManager';
 import { Note } from '../lib/DBProxy';
 import { AttachmentMenu } from './AttachmentMenu';

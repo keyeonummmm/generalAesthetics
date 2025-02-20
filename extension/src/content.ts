@@ -4,10 +4,13 @@ console.log('Content script initialized');
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Popup from './components/Popup';
-import './styles/content.css';
+import './styles/index.css';
 
 // Establish connection with background script
 const port = chrome.runtime.connect({ name: 'content-script' });
+
+// Track interface visibility state
+let isInterfaceVisible = false;
 
 function injectApp() {
   // Create container
@@ -31,7 +34,7 @@ function injectApp() {
 
   // Create style element for our CSS
   const style = document.createElement('style');
-  style.textContent = require('./styles/content.css').default;
+  style.textContent = require('./styles/index.css').default;
   
   // Append style and app container to shadow root
   shadowRoot.appendChild(style);
@@ -45,19 +48,47 @@ function injectApp() {
   root.render(React.createElement(Popup));
   
   // Listen for theme changes
-  window.matchMedia('(prefers-color-scheme: dark)')
-    .addEventListener('change', (e) => {
-      appContainer.classList.toggle('theme-dark', e.matches);
-      appContainer.classList.toggle('theme-light', !e.matches);
-    });
+  const themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handleThemeChange = (e: MediaQueryListEvent) => {
+    appContainer.classList.toggle('theme-dark', e.matches);
+    appContainer.classList.toggle('theme-light', !e.matches);
+  };
+  
+  themeMediaQuery.addEventListener('change', handleThemeChange);
 
-  // Add toggle functionality
-  chrome.runtime.onMessage.addListener((message) => {
+  // Handle interface visibility toggle
+  const toggleInterface = () => {
+    isInterfaceVisible = !isInterfaceVisible;
+    appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
+    // Notify background script of state change
+    port.postMessage({ type: 'interfaceStateChanged', isVisible: isInterfaceVisible });
+  };
+
+  // Listen for toggle messages from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'toggleInterface') {
-      appContainer.style.display = 
-        appContainer.style.display === 'none' ? 'block' : 'none';
+      toggleInterface();
+      sendResponse({ success: true });
     }
+    return true; // Keep the message channel open for async response
   });
+
+  // Listen for custom events from components
+  window.addEventListener('ga-interface-hidden', () => {
+    isInterfaceVisible = false;
+    // Notify background script of state change
+    port.postMessage({ type: 'interfaceStateChanged', isVisible: false });
+  });
+
+  // Cleanup function
+  const cleanup = () => {
+    themeMediaQuery.removeEventListener('change', handleThemeChange);
+    window.removeEventListener('ga-interface-hidden', () => {});
+    port.disconnect();
+  };
+
+  // Add cleanup on window unload
+  window.addEventListener('unload', cleanup);
 }
 
 // Initialize injection

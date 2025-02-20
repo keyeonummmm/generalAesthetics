@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Attachment } from '../lib/Attachment';
-import '../styles/attachment-operation.css';
+import '../styles/components/attachment-operation.css';
 
 interface AttachmentOperationProps {
   attachment: Attachment;

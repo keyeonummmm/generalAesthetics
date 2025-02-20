@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DBProxy as NotesDB } from '../lib/DBProxy';
-import '../styles/notes-manager.css';
+import '../styles/components/notes-manager.css';
 import { TabManagerRef } from './TabManager';
 import { Note } from '../lib/DBProxy';
 
