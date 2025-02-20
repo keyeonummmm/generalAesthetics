@@ -11,6 +11,7 @@ import { AttachmentMenu } from './AttachmentMenu';
 import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
+import { shadowRootRef } from '../content';
 
 const Popup: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -77,19 +78,6 @@ const Popup: React.FC = () => {
     setIsNotesManagerOpen(false);
   };
 
-  const handleClose = () => {
-    if (hasUnsavedChanges) {
-      if (window.confirm('You have unsaved changes. Are you sure you want to close?')) {
-        window.close();
-      }
-    } else {
-      window.close();
-    }
-  };
-
-  // Create ref for TabManager to access its methods
-  const tabManagerRef = React.useRef<TabManagerRef | null>(null);
-
   const handleUrlCapture = async () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -126,6 +114,9 @@ const Popup: React.FC = () => {
     }
   };
 
+  // Create ref for TabManager to access its methods
+  const tabManagerRef = React.useRef<TabManagerRef | null>(null);
+
   return (
     <div className="popup-container">
       <div className="header">
@@ -140,7 +131,7 @@ const Popup: React.FC = () => {
           <ActionButton type="menu" onClick={() => setIsMenuOpen(true)} title="Menu" />
           <ActionButton 
             type="close" 
-            onClick={handleClose}
+            onClick={() => {}}
             title="Close"
             hasUnsavedChanges={hasUnsavedChanges}
           />

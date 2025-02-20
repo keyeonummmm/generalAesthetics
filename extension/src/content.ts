@@ -68,28 +68,15 @@ function injectApp() {
   return appContainer;
 }
 
-function destroyApp() {
-  try {
-    // Only called on window unload
-    if (root) {
-      root.unmount();
-      root = null;
+// Add a function to get current visibility state
+function getInterfaceVisibility(): boolean {
+  if (shadowRootRef) {
+    const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+    if (appContainer instanceof HTMLElement) {
+      return appContainer.style.display !== 'none';
     }
-    
-    const container = document.getElementById('ga-notes-root');
-    if (container && container.isConnected) {
-      document.body.removeChild(container);
-    }
-    
-    isInterfaceVisible = false;
-    isInitialized = false;
-    
-    port.disconnect();
-    return true;
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-    return false;
   }
+  return false;
 }
 
 function toggleInterface(forceState?: boolean) {
@@ -103,8 +90,9 @@ function toggleInterface(forceState?: boolean) {
     } else if (shadowRootRef) {
       const appContainer = shadowRootRef.querySelector('.ga-notes-container');
       if (appContainer instanceof HTMLElement) {
-        // Use forceState if provided, otherwise toggle
-        isInterfaceVisible = forceState !== undefined ? forceState : !isInterfaceVisible;
+        // Check actual current visibility if forceState isn't provided
+        const currentVisibility = getInterfaceVisibility();
+        isInterfaceVisible = forceState !== undefined ? forceState : !currentVisibility;
         appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
       }
     }
@@ -122,7 +110,12 @@ function toggleInterface(forceState?: boolean) {
   }
 }
 
-// Listen for messages from both background and ActionButton
+// Export function to update visibility state
+export function updateInterfaceVisibility(visible: boolean) {
+  isInterfaceVisible = visible;
+}
+
+// Simplified message handling
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'toggleInterface') {
     const success = toggleInterface();
@@ -134,7 +127,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Clean up on Chrome native hide
+// Keep Chrome native hide handling
 chrome.runtime.onSuspend.addListener(() => {
   isInterfaceVisible = false;
   if (shadowRootRef) {
@@ -144,8 +137,5 @@ chrome.runtime.onSuspend.addListener(() => {
     }
   }
 });
-
-// Only cleanup on window unload
-window.addEventListener('unload', destroyApp);
 
 export {}; // Keep module format 

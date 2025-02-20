@@ -2,8 +2,8 @@
 // This component is responsible for the behavior of the edit, menu, and close buttons, 
 // preventing windows from closing by clicking on areas outside the plugin.
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import { shadowRootRef } from '../content';
+import React from 'react';
+import { shadowRootRef, updateInterfaceVisibility } from '../content';
 
 type ButtonType = 'edit' | 'menu' | 'close';
 
@@ -44,19 +44,25 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
   title,
   hasUnsavedChanges = false 
 }) => {
-  const handleClick = async (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (type === 'close' && shadowRootRef) {
       if (hasUnsavedChanges) {
         if (window.confirm('You have unsaved changes. Are you sure you want to hide?')) {
-          // Send message to content script instead of directly manipulating DOM
-          chrome.runtime.sendMessage({ type: 'hideInterface' });
+          const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+          if (appContainer instanceof HTMLElement) {
+            appContainer.style.display = 'none';
+            updateInterfaceVisibility(false);
+          }
         }
       } else {
-        // Send message to content script
-        chrome.runtime.sendMessage({ type: 'hideInterface' });
+        const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+        if (appContainer instanceof HTMLElement) {
+          appContainer.style.display = 'none';
+          updateInterfaceVisibility(false);
+        }
       }
     }
 
