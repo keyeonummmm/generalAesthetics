@@ -15,41 +15,34 @@ chrome.runtime.onConnect.addListener((port) => {
     const tabId = port.sender?.tab?.id;
     if (tabId) {
       loadedTabs.add(tabId);
-    }
-    
-    // Remove tab from loadedTabs when port disconnects
-    port.onDisconnect.addListener(() => {
-      if (tabId) {
+      
+      port.onDisconnect.addListener(() => {
         loadedTabs.delete(tabId);
-      }
-    });
+      });
+    }
   }
 });
 
-// Handle browser action clicks
+// Handle browser action clicks with better error handling
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
 
   try {
-    // Check if content script is loaded
     if (!loadedTabs.has(tab.id)) {
-      // Inject content script
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['content.js']
       });
       
-      // Inject CSS
       await chrome.scripting.insertCSS({
         target: { tabId: tab.id },
         files: ['content.css']
       });
       
-      // Wait a bit for content script to initialize
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Increased delay for more reliable initialization
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
-    // Send toggle message
     await chrome.tabs.sendMessage(tab.id, { type: 'toggleInterface' });
   } catch (error) {
     console.error('Failed to toggle interface:', error);
@@ -79,5 +72,15 @@ async function handleDBOperation(message: any, sendResponse: (response: any) => 
     sendResponse({ error: (error as Error).message });
   }
 }
+
+// Handle interface visibility messages
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'hideInterface' && sender.tab?.id) {
+    // Use Chrome's messaging to tell content script to hide
+    chrome.tabs.sendMessage(sender.tab.id, { type: 'toggleInterface' });
+    sendResponse({ success: true });
+  }
+  return true; // Keep message channel open for async response
+});
 
 export {}; // Add this to make it a module 

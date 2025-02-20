@@ -16,6 +16,7 @@ interface Tab {
   updatedAt?: string;
   syncStatus: 'pending' | 'synced';
   noteId?: string;
+  lastEdited: string;
 }
 
 interface TabManagerProps {
@@ -55,38 +56,74 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   onContentChange,
 }, ref) => {
   const [tabs, setTabs] = useState<Tab[]>(() => {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (cached) {
-      try {
-        const parsedCache: TabManagerCache = JSON.parse(cached);
-        if (Array.isArray(parsedCache.tabs) && parsedCache.tabs.length > 0) {
-          return parsedCache.tabs as Tab[];
-        }
-      } catch (e) {
-        console.error('Failed to parse tab cache:', e);
-      }
-    }
-    const initialTab: Tab = { id: `new-${uuidv4()}`, title: '', content: '', isNew: true, syncStatus: 'pending' as const };
+    const initialTab: Tab = { 
+      id: `new-${uuidv4()}`, 
+      title: '', 
+      content: '', 
+      isNew: true, 
+      syncStatus: 'pending' as const,
+      lastEdited: new Date().toISOString()
+    };
     return [initialTab];
   });
 
-  const [activeTabId, setActiveTabId] = useState(() => {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (cached) {
+  const [activeTabId, setActiveTabId] = useState<string>('');
+
+  // Load cache on mount
+  useEffect(() => {
+    const loadCache = async () => {
       try {
-        const parsedCache: TabManagerCache = JSON.parse(cached);
-        if (Array.isArray(parsedCache.tabs) && 
-            parsedCache.tabs.length > 0 && 
-            parsedCache.activeTabId &&
-            parsedCache.tabs.some(tab => tab.id === parsedCache.activeTabId)) {
-          return parsedCache.activeTabId;
+        // Use chrome.storage.local to get extension-wide cache
+        const result = await chrome.storage.local.get('tabCache');
+        const cache = result.tabCache;
+        if (cache) {
+          setTabs(cache.tabs);
+          setActiveTabId(cache.activeTabId);
         }
-      } catch (e) {
-        console.error('Failed to parse tab cache for activeTabId:', e);
+      } catch (error) {
+        console.error('Failed to load tab cache:', error);
       }
+    };
+    
+    // Listen for cache changes from other instances
+    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+      if (changes.tabCache) {
+        const newCache = changes.tabCache.newValue;
+        if (newCache) {
+          setTabs(newCache.tabs);
+          setActiveTabId(newCache.activeTabId);
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    loadCache();
+
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, []);
+
+  // Save cache when tabs or activeTabId changes
+  useEffect(() => {
+    const saveCache = async () => {
+      try {
+        await chrome.storage.local.set({
+          tabCache: {
+            tabs,
+            activeTabId,
+            lastUpdated: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Failed to save tab cache:', error);
+      }
+    };
+    
+    if (tabs.length && activeTabId) {
+      saveCache();
     }
-    return tabs[0].id;
-  });
+  }, [tabs, activeTabId]);
 
   // Add ref to track the last saved note ID
   const lastSavedNoteRef = useRef<{[key: string]: string}>({});
@@ -140,7 +177,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
   };
 
-  const closeTab = (tabId: string) => {
+  const closeTab = async (tabId: string) => {
     console.log('Closing tab:', tabId);
     
     setTabs(prevTabs => {
@@ -154,22 +191,23 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           title: '', 
           content: '', 
           isNew: true,
-          syncStatus: 'pending' as const
+          syncStatus: 'pending' as const,
+          lastEdited: new Date().toISOString()
         });
       }
+
+      // Cache will be automatically updated by the tabs state change
       
       // Update active tab if needed
       if (activeTabId === tabId) {
         console.log('Updating active tab to:', newTabs[0].id);
         setActiveTabId(newTabs[0].id);
-        // Notify parent of content change
-        const newActiveTab = newTabs[0];
         onContentChange(
-          newActiveTab.id,
-          newActiveTab.title,
-          newActiveTab.content,
-          newActiveTab.version,
-          newActiveTab.noteId
+          newTabs[0].id,
+          newTabs[0].title,
+          newTabs[0].content,
+          newTabs[0].version,
+          newTabs[0].noteId
         );
       }
       
@@ -185,7 +223,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       version: note?.version,
       noteId: note?.id, // Track noteId separately
       isNew: !note,
-      syncStatus: note ? 'synced' as const : 'pending' as const
+      syncStatus: note ? 'synced' as const : 'pending' as const,
+      lastEdited: new Date().toISOString()
     };
     
     setTabs(prev => [...prev, newTab]);
@@ -277,7 +316,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           title: '', 
           content: '', 
           isNew: true,
-          syncStatus: 'pending' as const
+          syncStatus: 'pending' as const,
+          lastEdited: new Date().toISOString()
         };
         newTabs.push(newTab);
         
@@ -351,7 +391,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
           syncStatus: 'synced' as const,
-          noteId: note.id
+          noteId: note.id,
+          lastEdited: new Date().toISOString()
         };
         setTabs(prevTabs => [...prevTabs, newTab]);
         setActiveTabId(tabId);

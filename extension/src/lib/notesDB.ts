@@ -32,13 +32,18 @@ export class NotesDB {
     return this.dbConnection;
   }
 
+  private static async initializeStores(db: IDBDatabase) {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      store.createIndex('updatedAt', 'updatedAt');
+    }
+  }
+
   private static async openDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onerror = () => {
-        reject(request.error);
-      };
+      const request = indexedDB.open(DB_NAME, DB_VERSION + 1); // Increment version for new store
+      
+      request.onerror = () => reject(request.error);
       
       request.onsuccess = () => {
         const db = request.result;
@@ -50,10 +55,7 @@ export class NotesDB {
       
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('updatedAt', 'updatedAt');
-        }
+        this.initializeStores(db);
       };
     });
   }
@@ -278,15 +280,5 @@ export class NotesDB {
       this.dbConnection.close();
       this.dbConnection = null;
     }
-  }
-
-  static async clearCache(): Promise<void> {
-    localStorage.removeItem('tabManager_cache');
-  }
-
-  static async restoreFromCache(): Promise<Note[]> {
-    const cached = localStorage.getItem('tabManager_cache');
-    if (!cached) return [];
-    return JSON.parse(cached);
   }
 }

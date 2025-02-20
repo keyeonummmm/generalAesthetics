@@ -9,21 +9,29 @@ import './styles/index.css';
 // Establish connection with background script
 const port = chrome.runtime.connect({ name: 'content-script' });
 
-// Track interface visibility state
+// Track interface state
 let isInterfaceVisible = false;
+let isInitialized = false;
+let root: ReturnType<typeof createRoot> | null = null;
+export let shadowRootRef: ShadowRoot | null = null;
 
 function injectApp() {
+  // Prevent multiple initializations
+  if (isInitialized) {
+    console.debug('App already initialized');
+    return null;
+  }
+
   // Create container
   const container = document.createElement('div');
   container.id = 'ga-notes-root';
   
-  // Create shadow root
-  const shadowRoot = container.attachShadow({ mode: 'closed' });
+  // Create shadow root and store reference
+  shadowRootRef = container.attachShadow({ mode: 'closed' });
   
   // Create app container inside shadow root
   const appContainer = document.createElement('div');
   appContainer.className = 'ga-notes-container';
-  appContainer.style.display = 'none';
   
   // Add theme class based on user preference
   appContainer.classList.add(
@@ -36,15 +44,15 @@ function injectApp() {
   const style = document.createElement('style');
   style.textContent = require('./styles/index.css').default;
   
-  // Append style and app container to shadow root
-  shadowRoot.appendChild(style);
-  shadowRoot.appendChild(appContainer);
+  // Append to shadow root using our stored reference
+  shadowRootRef.appendChild(style);
+  shadowRootRef.appendChild(appContainer);
   
   // Append main container to body
   document.body.appendChild(container);
 
   // Create root and render
-  const root = createRoot(appContainer);
+  root = createRoot(appContainer);
   root.render(React.createElement(Popup));
   
   // Listen for theme changes
@@ -56,42 +64,88 @@ function injectApp() {
   
   themeMediaQuery.addEventListener('change', handleThemeChange);
 
-  // Handle interface visibility toggle
-  const toggleInterface = () => {
-    isInterfaceVisible = !isInterfaceVisible;
-    appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
-    // Notify background script of state change
-    port.postMessage({ type: 'interfaceStateChanged', isVisible: isInterfaceVisible });
-  };
-
-  // Listen for toggle messages from background script
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'toggleInterface') {
-      toggleInterface();
-      sendResponse({ success: true });
-    }
-    return true; // Keep the message channel open for async response
-  });
-
-  // Listen for custom events from components
-  window.addEventListener('ga-interface-hidden', () => {
-    isInterfaceVisible = false;
-    // Notify background script of state change
-    port.postMessage({ type: 'interfaceStateChanged', isVisible: false });
-  });
-
-  // Cleanup function
-  const cleanup = () => {
-    themeMediaQuery.removeEventListener('change', handleThemeChange);
-    window.removeEventListener('ga-interface-hidden', () => {});
-    port.disconnect();
-  };
-
-  // Add cleanup on window unload
-  window.addEventListener('unload', cleanup);
+  isInitialized = true;
+  return appContainer;
 }
 
-// Initialize injection
-injectApp();
+function destroyApp() {
+  try {
+    // Only called on window unload
+    if (root) {
+      root.unmount();
+      root = null;
+    }
+    
+    const container = document.getElementById('ga-notes-root');
+    if (container && container.isConnected) {
+      document.body.removeChild(container);
+    }
+    
+    isInterfaceVisible = false;
+    isInitialized = false;
+    
+    port.disconnect();
+    return true;
+  } catch (error) {
+    console.error('Error during cleanup:', error);
+    return false;
+  }
+}
+
+function toggleInterface(forceState?: boolean) {
+  try {
+    if (!isInitialized) {
+      const appContainer = injectApp();
+      if (appContainer) {
+        appContainer.style.display = 'block';
+        isInterfaceVisible = true;
+      }
+    } else if (shadowRootRef) {
+      const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+      if (appContainer instanceof HTMLElement) {
+        // Use forceState if provided, otherwise toggle
+        isInterfaceVisible = forceState !== undefined ? forceState : !isInterfaceVisible;
+        appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
+      }
+    }
+    
+    // Notify background script of state change
+    port.postMessage({ 
+      type: 'interfaceStateChanged', 
+      isVisible: isInterfaceVisible 
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Toggle failed:', error);
+    return false;
+  }
+}
+
+// Listen for messages from both background and ActionButton
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'toggleInterface') {
+    const success = toggleInterface();
+    sendResponse({ success });
+  } else if (message.type === 'hideInterface') {
+    const success = toggleInterface(false); // Force hide
+    sendResponse({ success });
+  }
+  return true;
+});
+
+// Clean up on Chrome native hide
+chrome.runtime.onSuspend.addListener(() => {
+  isInterfaceVisible = false;
+  if (shadowRootRef) {
+    const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+    if (appContainer instanceof HTMLElement) {
+      appContainer.style.display = 'none';
+    }
+  }
+});
+
+// Only cleanup on window unload
+window.addEventListener('unload', destroyApp);
 
 export {}; // Keep module format 

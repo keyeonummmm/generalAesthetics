@@ -3,6 +3,7 @@
 // preventing windows from closing by clicking on areas outside the plugin.
 
 import React, { useCallback, useEffect, useRef } from 'react';
+import { shadowRootRef } from '../content';
 
 type ButtonType = 'edit' | 'menu' | 'close';
 
@@ -43,87 +44,28 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
   title,
   hasUnsavedChanges = false 
 }) => {
-  const retryTimeoutRef = useRef<number | null>(null);
-  const retryCountRef = useRef(0);
-  const MAX_RETRIES = 2;
-  const RETRY_DELAY = 100; // ms
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-  const clearRetryTimeout = () => {
-    if (retryTimeoutRef.current) {
-      window.clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => clearRetryTimeout();
-  }, []);
-
-  const attemptToClose = useCallback((container: HTMLElement) => {
-    try {
-      container.style.display = 'none';
-      // Dispatch event to notify other components
-      window.dispatchEvent(new CustomEvent('ga-interface-hidden'));
-      retryCountRef.current = 0; // Reset counter on success
-      return true;
-    } catch (error) {
-      console.debug('Close attempt failed, will retry');
-      return false;
-    }
-  }, []);
-
-  const retryClose = useCallback((container: HTMLElement) => {
-    clearRetryTimeout();
-
-    // Check if container is still visible
-    if (container.style.display !== 'none' && retryCountRef.current < MAX_RETRIES) {
-      retryCountRef.current++;
-      
-      retryTimeoutRef.current = window.setTimeout(() => {
-        // Only attempt to close if container is still visible
-        if (container.style.display !== 'none') {
-          attemptToClose(container);
-          
-          // If still not closed, schedule another retry
-          if (container.style.display !== 'none' && retryCountRef.current < MAX_RETRIES) {
-            retryClose(container);
-          }
+    if (type === 'close' && shadowRootRef) {
+      if (hasUnsavedChanges) {
+        if (window.confirm('You have unsaved changes. Are you sure you want to hide?')) {
+          // Send message to content script instead of directly manipulating DOM
+          chrome.runtime.sendMessage({ type: 'hideInterface' });
         }
-      }, RETRY_DELAY * retryCountRef.current); // Increase delay with each retry
-    }
-  }, [attemptToClose]);
-
-  const handleClose = useCallback((container: HTMLElement) => {
-    // First attempt
-    const closed = attemptToClose(container);
-    
-    // If first attempt failed, start retry mechanism
-    if (!closed) {
-      retryClose(container);
-    }
-  }, [attemptToClose, retryClose]);
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (type === 'close') {
-      const container = (e.target as HTMLElement)
-        .closest('.ga-notes-container') as HTMLElement;
-      
-      if (container) {
-        if (hasUnsavedChanges) {
-          if (window.confirm('You have unsaved changes. Are you sure you want to hide?')) {
-            handleClose(container);
-          }
-        } else {
-          handleClose(container);
-        }
+      } else {
+        // Send message to content script
+        chrome.runtime.sendMessage({ type: 'hideInterface' });
       }
     }
+
     onClick();
   };
 
   return (
     <button 
+      type="button"
       className="icon-button" 
       onClick={handleClick}
       title={title}
