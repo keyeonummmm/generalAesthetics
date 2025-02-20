@@ -109,8 +109,6 @@ export class NotesDB {
   ): Promise<Note> {
     const db = await this.getDB();
     const timestamp = formatTimestamp();
-    
-    // Process attachments
     const processedAttachments = attachments?.map(attachment => ({
       ...attachment,
       syncStatus: 'synced' as const
@@ -144,7 +142,6 @@ export class NotesDB {
       request.onerror = () => {
         console.error('Failed to create note:', request.error);
         reject(request.error);
-
       };
     });
   }
@@ -165,13 +162,20 @@ export class NotesDB {
       throw new Error('Version conflict - note was modified elsewhere');
     }
 
+    // For updates, keep attachment status as is until save completes
+    const processedAttachments = attachments?.map(attachment => ({
+      ...attachment,
+      // Only mark as synced if it's a new save operation
+      syncStatus: attachment.syncStatus === 'pending' ? 'synced' as const : attachment.syncStatus
+    })) || [];
+
     const updatedNote: Note = {
       ...existingNote,
       title: title.trim() || existingNote.title,
       content: content.trim(),
       updatedAt: formatTimestamp(),
       version: existingNote.version + 1,
-      attachments: attachments || [],
+      attachments: processedAttachments,
       syncStatus: 'synced' as const
     };
 
