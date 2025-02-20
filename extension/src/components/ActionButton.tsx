@@ -44,12 +44,24 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
   hasUnsavedChanges = false 
 }) => {
   const handleClick = () => {
-    if (type === 'close' && hasUnsavedChanges) {
-      if (window.confirm('You have unsaved changes. Are you sure you want to close?')) {
-        window.close();
+    if (type === 'close') {
+      if (hasUnsavedChanges) {
+        if (window.confirm('You have unsaved changes. Are you sure you want to hide?')) {
+          const container = document.querySelector('.ga-notes-container') as HTMLElement;
+          if (container) {
+            container.style.display = 'none';
+            // Dispatch a custom event to notify other components
+            window.dispatchEvent(new CustomEvent('ga-interface-hidden'));
+          }
+        }
+      } else {
+        const container = document.querySelector('.ga-notes-container') as HTMLElement;
+        if (container) {
+          container.style.display = 'none';
+          // Dispatch a custom event to notify other components
+          window.dispatchEvent(new CustomEvent('ga-interface-hidden'));
+        }
       }
-    } else if (type === 'close') {
-      window.close();
     }
     onClick();
   };

@@ -6,9 +6,9 @@ import Menu from './Menu';
 import { ThemeManager } from '../UI/component';
 import '../styles/components.css';
 import { NotesManager } from './NotesManager';
-import { Note } from '../lib/notesDB';
+import { Note } from '../lib/DBProxy';
 import { AttachmentMenu } from './AttachmentMenu';
-import { NotesDB } from '../lib/notesDB';
+import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
 

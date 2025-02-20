@@ -5,9 +5,8 @@ const webpack = require('webpack');
 
 module.exports = {
   entry: {
-    popup: './src/popup.tsx',
-    background: './src/background.ts',
     content: './src/content.ts',
+    background: './src/background.ts'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -27,27 +26,21 @@ module.exports = {
       },
       {
         test: /\.css$/,
-        include: [
-          path.resolve(__dirname, 'src/style'),
-          path.resolve(__dirname, 'src/components')
-        ],
-        use: ['style-loader', 'css-loader'],
+        use: [
+          {
+            loader: 'css-loader',
+            options: {
+              exportType: 'string'
+            }
+          }
+        ]
       },
     ],
   },
   resolve: {
-    extensions: ['.tsx', '.ts', '.js', '.css', '.test.ts', '.test.tsx'],
-    modules: [
-      'node_modules',
-      path.resolve(__dirname, 'src/style')
-    ],
+    extensions: ['.tsx', '.ts', '.js', '.css'],
   },
   plugins: [
-    new HtmlWebpackPlugin({
-      template: './public/popup.html',
-      filename: 'popup.html',
-      chunks: ['popup'],
-    }),
     new CopyPlugin({
       patterns: [
         { from: "manifest.json", to: "manifest.json" },

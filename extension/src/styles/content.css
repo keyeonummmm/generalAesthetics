@@ -1,0 +1,78 @@
+/* Reset styles for our container */
+.ga-notes-container {
+  all: initial;
+  font-family: system-ui, -apple-system, sans-serif;
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 400px;
+  height: 600px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 2147483647;
+  overflow: hidden;
+}
+
+/* Scope all theme variables to our container */
+.ga-notes-container {
+  --ga-light-bg: #f5f5dc;
+  --ga-light-text: #2c2c2c;
+  --ga-light-border: #d4d4d4;
+  --ga-light-hover: #2c2c2c;
+  --ga-light-hover-text: #f5f5dc;
+  
+  --ga-dark-bg: rgba(0, 0, 0, 0.85);
+  --ga-dark-text: #e6e6e6;
+  --ga-dark-border: #404040;
+  --ga-dark-hover: #e6e6e6;
+  --ga-dark-hover-text: #2c2c2c;
+  
+  --ga-shadow-color: rgba(0, 0, 0, 0.1);
+  --ga-transition-speed: 0.3s;
+  --ga-border-radius: 8px;
+  --ga-spacing-unit: 12px;
+}
+
+/* Theme classes scoped to our container */
+.ga-notes-container.theme-light {
+  --ga-bg-color: var(--ga-light-bg);
+  --ga-text-color: var(--ga-light-text);
+  --ga-border-color: var(--ga-light-border);
+  --ga-hover-bg: var(--ga-light-hover);
+  --ga-hover-text: var(--ga-light-hover-text);
+}
+
+.ga-notes-container.theme-dark {
+  --ga-bg-color: var(--ga-dark-bg);
+  --ga-text-color: var(--ga-dark-text);
+  --ga-border-color: var(--ga-dark-border);
+  --ga-hover-bg: var(--ga-dark-hover);
+  --ga-hover-text: var(--ga-dark-hover-text);
+}
+
+/* Ensure all child elements use border-box */
+.ga-notes-container * {
+  box-sizing: border-box;
+}
+
+/* Scope all component styles */
+.ga-notes-container .header {
+  display: flex;
+  align-items: center;
+  padding: var(--ga-spacing-unit);
+  border-bottom: 1px solid var(--ga-border-color);
+  background: var(--ga-bg-color);
+  color: var(--ga-text-color);
+}
+
+.ga-notes-container .action-button {
+  background: transparent;
+  border: 1px solid var(--ga-border-color);
+  color: var(--ga-text-color);
+  border-radius: var(--ga-border-radius);
+  cursor: pointer;
+  transition: all var(--ga-transition-speed) ease;
+}
+
+/* Continue with all other styles, properly scoped */ 

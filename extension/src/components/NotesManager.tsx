@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Note, NotesDB } from '../lib/notesDB';
+import { DBProxy as NotesDB } from '../lib/DBProxy';
 import '../styles/notes-manager.css';
 import { TabManagerRef } from './TabManager';
+import { Note } from '../lib/DBProxy';
 
 interface NotesManagerProps {
   isOpen: boolean;

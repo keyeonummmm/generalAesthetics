@@ -2,7 +2,7 @@
 // communicates with the NotesDB to save the note
 
 import React, { useState } from 'react';
-import { Note, NotesDB } from '../lib/notesDB';
+import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 
 interface SaveButtonProps {

@@ -1,6 +1,6 @@
 import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import NoteInput from './NoteInput';
-import { Note, NotesDB } from '../lib/notesDB';
+import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import '../styles/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
