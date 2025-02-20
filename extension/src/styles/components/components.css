@@ -1,41 +1,41 @@
 /* Theme Variables */
 :root {
   /* Light Theme Colors */
-  --light-bg: #f5f5dc;  /* Soft beige */
-  --light-text: #2c2c2c;
-  --light-border: #d4d4d4;
-  --light-hover: #2c2c2c;
-  --light-hover-text: #f5f5dc;
+  --ga-light-bg: #f5f5dc;  /* Soft beige */
+  --ga-light-text: #2c2c2c;
+  --ga-light-border: #d4d4d4;
+  --ga-light-hover: #2c2c2c;
+  --ga-light-hover-text: #f5f5dc;
   
   /* Dark Theme Colors */
-  --dark-bg: rgba(0, 0, 0, 0.85);  /* Translucent black */
-  --dark-text: #e6e6e6;
-  --dark-border: #404040;
-  --dark-hover: #e6e6e6;
-  --dark-hover-text: #2c2c2c;
+  --ga-dark-bg: rgba(0, 0, 0, 0.85);  /* Translucent black */
+  --ga-dark-text: #e6e6e6;
+  --ga-dark-border: #404040;
+  --ga-dark-hover: #e6e6e6;
+  --ga-dark-hover-text: #2c2c2c;
   
   /* Shared Variables */
-  --shadow-color: rgba(0, 0, 0, 0.1);
-  --transition-speed: 0.3s;
-  --border-radius: 8px;
-  --spacing-unit: 12px;
+  --ga-shadow-color: rgba(0, 0, 0, 0.1);
+  --ga-transition-speed: 0.3s;
+  --ga-border-radius: 8px;
+  --ga-spacing-unit: 12px;
 }
 
 /* Base Theme Classes */
 .theme-light {
-  --bg-color: var(--light-bg) !important;
-  --text-color: var(--light-text) !important;
-  --border-color: var(--light-border) !important;
-  --hover-bg: var(--light-hover) !important;
-  --hover-text: var(--light-hover-text) !important;
+  --bg-color: var(--ga-light-bg) !important;
+  --text-color: var(--ga-light-text) !important;
+  --border-color: var(--ga-light-border) !important;
+  --hover-bg: var(--ga-light-hover) !important;
+  --hover-text: var(--ga-light-hover-text) !important;
 }
 
 .theme-dark {
-  --bg-color: var(--dark-bg) !important;
-  --text-color: var(--dark-text) !important;
-  --border-color: var(--dark-border) !important;
-  --hover-bg: var(--dark-hover) !important;
-  --hover-text: var(--dark-hover-text) !important;
+  --bg-color: var(--ga-dark-bg) !important;
+  --text-color: var(--ga-dark-text) !important;
+  --border-color: var(--ga-dark-border) !important;
+  --hover-bg: var(--ga-dark-hover) !important;
+  --hover-text: var(--ga-dark-hover-text) !important;
 }
 
 /* Popup Container */
@@ -44,9 +44,9 @@
   min-height: 400px;
   background: var(--bg-color);
   color: var(--text-color);
-  border-radius: var(--border-radius);
-  box-shadow: 0 4px 12px var(--shadow-color);
-  transition: all var(--transition-speed) ease;
+  border-radius: var(--ga-border-radius);
+  box-shadow: 0 4px 12px var(--ga-shadow-color);
+  transition: all var(--ga-transition-speed) ease;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -56,7 +56,7 @@
 .header {
   display: flex;
   align-items: center;
-  padding: var(--spacing-unit);
+  padding: var(--ga-spacing-unit);
   border-bottom: 1px solid var(--border-color);
   width: 100%;
   box-sizing: border-box;
@@ -68,18 +68,18 @@
 
 .header-right {
   display: flex;
-  gap: calc(var(--spacing-unit) / 2);
+  gap: calc(var(--ga-spacing-unit) / 2);
 }
 
 /* Content Section */
 .content {
   flex: 1;
-  padding: var(--spacing-unit);
+  padding: var(--ga-spacing-unit);
 }
 
 /* Footer Section */
 .footer {
-  padding: var(--spacing-unit);
+  padding: var(--ga-spacing-unit);
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -97,7 +97,7 @@
   background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--ga-border-radius);
   padding: 8px;
   height: 36px;
   width: 36px;
@@ -105,7 +105,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: all var(--ga-transition-speed) ease;
 }
 
 .attachment-upload-btn:hover:not(:disabled) {
@@ -146,9 +146,9 @@
   background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--ga-border-radius);
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: all var(--ga-transition-speed) ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,9 +176,9 @@
   color: var(--hover-text);
   border: none;
   padding: 8px 24px;
-  border-radius: var(--border-radius);
+  border-radius: var(--ga-border-radius);
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: all var(--ga-transition-speed) ease;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -206,7 +206,7 @@
 
 .save-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px var(--shadow-color);
+  box-shadow: 0 2px 4px var(--ga-shadow-color);
 }
 
 .save-button svg {
@@ -228,12 +228,12 @@
 }
 
 .popup-container {
-  animation: fadeIn var(--transition-speed) ease;
+  animation: fadeIn var(--ga-transition-speed) ease;
 }
 
 /* Menu Styles */
 .menu-section {
-  padding: var(--spacing-unit);
+  padding: var(--ga-spacing-unit);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -242,7 +242,7 @@
 }
 
 .menu-title {
-  margin: 0 0 var(--spacing-unit);
+  margin: 0 0 var(--ga-spacing-unit);
   font-size: 14px;
   color: var(--text-color);
   opacity: 0.8;
@@ -259,8 +259,8 @@
   align-items: center;
   cursor: pointer;
   padding: 8px;
-  border-radius: var(--border-radius);
-  transition: background-color var(--transition-speed) ease;
+  border-radius: var(--ga-border-radius);
+  transition: background-color var(--ga-transition-speed) ease;
 }
 
 .menu-option:hover {
@@ -288,8 +288,8 @@
 /* Update existing menu styles */
 .menu-container {
   background: var(--bg-color);
-  border-radius: var(--border-radius);
-  box-shadow: 0 4px 12px var(--shadow-color);
+  border-radius: var(--ga-border-radius);
+  box-shadow: 0 4px 12px var(--ga-shadow-color);
   min-width: 240px;
   overflow: hidden;
 }
@@ -305,21 +305,21 @@
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  animation: fadeIn var(--transition-speed) ease;
+  animation: fadeIn var(--ga-transition-speed) ease;
 }
 
 /* Attachments Section */
 .attachments-section {
-  margin-top: var(--spacing-unit);
+  margin-top: var(--ga-spacing-unit);
   border-top: 1px solid var(--border-color);
-  padding-top: var(--spacing-unit);
+  padding-top: var(--ga-spacing-unit);
 }
 
 .attachments-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-unit);
+  margin-bottom: var(--ga-spacing-unit);
 }
 
 .attachments-title {
@@ -332,14 +332,14 @@
   background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--ga-border-radius);
   width: 28px;
   height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-speed) ease;
+  transition: all var(--ga-transition-speed) ease;
 }
 
 .add-attachment-btn:hover:not(:disabled) {
@@ -350,20 +350,20 @@
 .attachments-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--spacing-unit);
+  gap: var(--ga-spacing-unit);
 }
 
 .attachment-card {
   border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
+  border-radius: var(--ga-border-radius);
   overflow: hidden;
   background: var(--bg-color);
-  transition: all var(--transition-speed) ease;
+  transition: all var(--ga-transition-speed) ease;
 }
 
 .attachment-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--shadow-color);
+  box-shadow: 0 4px 12px var(--ga-shadow-color);
 }
 
 .attachment-preview {
@@ -387,7 +387,7 @@
 }
 
 .attachment-info {
-  padding: calc(var(--spacing-unit) / 2);
+  padding: calc(var(--ga-spacing-unit) / 2);
 }
 
 .attachment-title {
@@ -419,7 +419,7 @@
   padding: 4px;
   cursor: pointer;
   opacity: 0.6;
-  transition: opacity var(--transition-speed) ease;
+  transition: opacity var(--ga-transition-speed) ease;
 }
 
 .action-btn:hover:not(:disabled) {
@@ -435,4 +435,31 @@
   .attachment-preview {
     background: rgba(255, 255, 255, 0.03);
   }
+}
+
+/* Update button styles to be properly scoped */
+.ga-notes-container .icon-button {
+  background: transparent;
+  border: 1px solid var(--ga-border-color);
+  color: var(--ga-text-color);
+  border-radius: var(--ga-border-radius);
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  transition: all var(--ga-transition-speed) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ga-notes-container .icon-button:hover {
+  background: var(--ga-hover-bg);
+  color: var(--ga-hover-text);
+}
+
+.ga-notes-container .icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
