@@ -1,14 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-
-export interface NoteAttachment {
-  type: 'image' | 'url' | 'file';
-  url: string;
-  title?: string;
-  size?: number;
-  mimeType?: string;
-  thumbnailUrl?: string;
-  createdAt: string;
-}
+import { Attachment } from './Attachment';
 
 export interface Note {
   id: string;
@@ -17,7 +8,7 @@ export interface Note {
   createdAt: string;
   updatedAt: string;
   version: number;
-  attachments?: NoteAttachment[];
+  attachments?: Attachment[];
   syncStatus?: 'pending' | 'synced';
 }
 
@@ -111,9 +102,25 @@ export class NotesDB {
     });
   }
 
-  static async createNote(title: string, content: string): Promise<Note> {
+  static async createNote(
+    title: string, 
+    content: string,
+    attachments?: Attachment[]
+  ): Promise<Note> {
     const db = await this.getDB();
     const timestamp = formatTimestamp();
+    
+    // Process attachments
+    const processedAttachments = attachments?.map(attachment => ({
+      ...attachment,
+      syncStatus: 'synced' as const
+    })) || [];
+
+    // Check if we have any content to save (title, content, or attachments)
+    if (!title.trim() && !content.trim() && processedAttachments.length === 0) {
+      throw new Error('Note must have either title, content, or attachments');
+    }
+
     const newNote: Note = {
       id: uuidv4(),
       title: title.trim() || 'Untitled Note',
@@ -121,7 +128,8 @@ export class NotesDB {
       createdAt: timestamp,
       updatedAt: timestamp,
       version: 1,
-      syncStatus: 'pending'
+      attachments: processedAttachments,
+      syncStatus: 'synced' as const
     };
 
     return new Promise((resolve, reject) => {
@@ -129,8 +137,15 @@ export class NotesDB {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.add(newNote);
 
-      request.onsuccess = () => resolve(newNote);
-      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        console.log('Successfully created note with attachments:', newNote);
+        resolve(newNote);
+      };
+      request.onerror = () => {
+        console.error('Failed to create note:', request.error);
+        reject(request.error);
+
+      };
     });
   }
 
@@ -138,7 +153,8 @@ export class NotesDB {
     id: string,
     title: string,
     content: string,
-    expectedVersion?: number
+    expectedVersion?: number,
+    attachments?: Attachment[]
   ): Promise<Note> {
     const existingNote = await this.getNote(id);
     if (!existingNote) {
@@ -155,7 +171,8 @@ export class NotesDB {
       content: content.trim(),
       updatedAt: formatTimestamp(),
       version: existingNote.version + 1,
-      syncStatus: 'pending'
+      attachments: attachments || [],
+      syncStatus: 'synced' as const
     };
 
     const db = await this.getDB();
@@ -169,41 +186,87 @@ export class NotesDB {
     });
   }
 
-  static async addAttachment(noteId: string, attachment: NoteAttachment): Promise<Note> {
+  static async addAttachment(noteId: string, url: string, title: string | undefined): Promise<Note> {
+    console.log('NotesDB.addAttachment called:', {
+      noteId,
+      url,
+      title
+    });
+
     const note = await this.getNote(noteId);
     if (!note) {
       throw new Error('Note not found');
     }
 
+    console.log('Found note for attachment:', note);
+
+    const attachment: Attachment = {
+      type: "url",
+      id: Date.now(),
+      url,
+      createdAt: formatTimestamp(),
+      syncStatus: 'pending'
+    };
+
     const updatedNote: Note = {
       ...note,
       attachments: [
         ...(note.attachments || []),
-        { ...attachment, createdAt: formatTimestamp() }
+        attachment
       ],
       updatedAt: formatTimestamp(),
       version: note.version + 1,
       syncStatus: 'pending'
     };
 
-    return this.updateNote(noteId, updatedNote.title, updatedNote.content, note.version);
+    console.log('Saving updated note with attachment:', updatedNote);
+    
+    // Save to IndexedDB
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(updatedNote);
+
+      request.onsuccess = () => {
+        console.log('Successfully saved note with attachment');
+        resolve(updatedNote);
+      };
+      request.onerror = () => {
+        console.error('Failed to save note with attachment:', request.error);
+        reject(request.error);
+      };
+    });
   }
 
-  static async removeAttachment(noteId: string, attachmentUrl: string): Promise<Note> {
+  static async removeAttachment(noteId: string, attachmentId: number): Promise<Note> {
     const note = await this.getNote(noteId);
-    if (!note || !note.attachments) {
-      throw new Error('Note or attachment not found');
+    if (!note) {
+      throw new Error('Note not found');
+    }
+
+    // Make sure attachments array exists
+    if (!note.attachments) {
+      note.attachments = [];
+      return note;
     }
 
     const updatedNote: Note = {
       ...note,
-      attachments: note.attachments.filter(a => a.url !== attachmentUrl),
+      attachments: note.attachments.filter(a => a.id !== attachmentId),
       updatedAt: formatTimestamp(),
       version: note.version + 1,
       syncStatus: 'pending'
     };
 
-    return this.updateNote(noteId, updatedNote.title, updatedNote.content, note.version);
+    // Use updateNote to save changes
+    return this.updateNote(
+      noteId, 
+      updatedNote.title, 
+      updatedNote.content, 
+      note.version,
+      updatedNote.attachments
+    );
   }
 
   static async closeConnection(): Promise<void> {

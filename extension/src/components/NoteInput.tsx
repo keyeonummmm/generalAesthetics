@@ -1,17 +1,18 @@
 import React from 'react';
-import { NoteAttachment } from '../lib/notesDB';
+import { Attachment } from '../lib/Attachment';
+import { AttachmentOperation } from './AttachmentOperation';
 
 interface NoteInputProps {
   // Core note data only
   title: string;
   content: string;
-  attachments?: NoteAttachment[];
+  attachments?: Attachment[];
   noteId?: string;
   // Simple change handlers
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
-  onAttachmentAdd?: (attachment: NoteAttachment) => void;
-  onAttachmentRemove?: (attachmentUrl: string) => void;
+  onAttachmentAdd: (attachment: Attachment) => void;
+  onAttachmentRemove: (attachment: Attachment) => void;
 }
 
 const NoteInput: React.FC<NoteInputProps> = ({
@@ -69,52 +70,18 @@ const NoteInput: React.FC<NoteInputProps> = ({
       {attachments && attachments.length > 0 && (
         <div className="attachments-section">
           <div className="attachments-header">
-            <span className="attachments-title">Attachments ({attachments.length})</span>
+            <span className="attachments-title">
+              Attachments ({attachments.length})
+            </span>
           </div>
           <div className="attachments-grid">
-            {attachments.map((attachment, index) => (
-              <div key={index} className={`attachment-card ${attachment.type}`}>
-                <div className="attachment-preview">
-                  {attachment.type === 'image' && (
-                    <img 
-                      src={attachment.url} 
-                      alt={attachment.title || 'Image attachment'} 
-                      className="image-preview"
-                    />
-                  )}
-                  {attachment.type === 'url' && (
-                    <div className="url-preview">
-                      <span className="url-icon">🔗</span>
-                    </div>
-                  )}
-                  {attachment.type === 'file' && (
-                    <div className="file-preview">
-                      <span className="file-icon">📄</span>
-                    </div>
-                  )}
-                </div>
-                <div className="attachment-info">
-                  <div className="attachment-title">
-                    {attachment.title || attachment.url}
-                  </div>
-                  <div className="attachment-metadata">
-                    {attachment.size && (
-                      <span className="file-size">{formatFileSize(attachment.size)}</span>
-                    )}
-                    <span className="attachment-date">
-                      {formatDate(attachment.createdAt)}
-                    </span>
-                  </div>
-                  {onAttachmentRemove && (
-                    <button 
-                      className="remove-attachment"
-                      onClick={() => onAttachmentRemove(attachment.url)}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
+            {attachments.map((attachment) => (
+              <AttachmentOperation
+                key={attachment.id}
+                attachment={attachment}
+                onRemove={onAttachmentRemove}
+                isPending={attachment.syncStatus === 'pending'}
+              />
             ))}
           </div>
         </div>

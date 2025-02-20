@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { Note, NotesDB } from '../lib/notesDB';
+import { Attachment } from '../lib/Attachment';
 
 interface SaveButtonProps {
   title: string;
@@ -10,6 +11,7 @@ interface SaveButtonProps {
   existingNoteId?: string;
   currentVersion?: number;
   tabId: string;
+  attachments?: Attachment[];
   onSaveComplete?: (note: Note) => void;
   onVersionConflict?: () => void;
 }
@@ -20,13 +22,15 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
   existingNoteId,
   currentVersion,
   tabId,
+  attachments,
   onSaveComplete,
   onVersionConflict
 }) => {
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!title.trim() && !content.trim()) {
+    if (!title.trim() && !content.trim() && (!attachments || attachments.length === 0)) {
+      console.log('[SaveButton] Aborting save - no content to save');
       return;
     }
 
@@ -40,9 +44,19 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
       let note: Note;
       
       if (existingNoteId) {
-        note = await NotesDB.updateNote(existingNoteId, title, content, currentVersion);
+        note = await NotesDB.updateNote(
+          existingNoteId, 
+          title, 
+          content, 
+          currentVersion,
+          attachments
+        );
       } else {
-        note = await NotesDB.createNote(title, content);
+        note = await NotesDB.createNote(
+          title, 
+          content,
+          attachments
+        );
       }
       
       if (onSaveComplete) {

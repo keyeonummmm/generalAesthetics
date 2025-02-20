@@ -1,6 +1,7 @@
 import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import NoteInput from './NoteInput';
-import { Note, NoteAttachment, NotesDB } from '../lib/notesDB';
+import { Note, NotesDB } from '../lib/notesDB';
+import { Attachment } from '../lib/Attachment';
 import '../styles/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,7 +9,7 @@ interface Tab {
   id: string;
   title: string;
   content: string;
-  attachments?: NoteAttachment[];
+  attachments?: Attachment[];
   isNew: boolean;
   version?: number;
   createdAt?: string;
@@ -32,11 +33,14 @@ export interface TabManagerRef {
     content: string;
     version?: number;
     noteId?: string;
+    attachments?: Attachment[];
   } | null;
   updateTabContent: (id: string, title: string, content: string) => void;
   removeTabContent: (noteId: string) => void;
   updateTabWithId: (tabId: string, note: Note) => void;
   isNoteOpenInAnyTab: (noteId: string) => boolean;
+  addPendingAttachment: (tabId: string, attachment: Attachment) => void;
+  handleSave: (tabId: string, note: Note) => Promise<void>;
 }
 
 interface TabManagerCache {
@@ -379,7 +383,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         title: activeTab.title,
         content: activeTab.content,
         version: activeTab.version,
-        noteId: activeTab.noteId // Use the stored noteId
+        noteId: activeTab.noteId,
+        attachments: activeTab.attachments
       } : null;
     },
     updateTabContent: (tabId: string, title: string, content: string) => {
@@ -415,24 +420,54 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     },
     removeTabContent,
     updateTabWithId: (tabId: string, note: Note) => {
-      setTabs(prevTabs => prevTabs.map(tab => {
-        if (tab.id === tabId) {
-          return {
-            ...tab,
-            noteId: note.id,
-            title: note.title,
-            content: note.content,
-            version: note.version,
-            isNew: false,
-            syncStatus: 'synced' as const
-          };
-        }
-        return tab;
-      }));
+      console.log('TabManager.updateTabWithId called:', {
+        tabId,
+        note,
+        currentTabs: tabs
+      });
+      
+      setTabs(prevTabs => {
+        const updatedTabs = prevTabs.map(tab => {
+          if (tab.id === tabId) {
+            console.log('Updating tab:', {
+              before: tab,
+              after: {
+                ...tab,
+                noteId: note.id,
+                title: note.title,
+                content: note.content,
+                version: note.version,
+                attachments: note.attachments,
+                isNew: false,
+                syncStatus: 'synced'
+              }
+            });
+            return {
+              ...tab,
+              noteId: note.id,
+              title: note.title,
+              content: note.content,
+              version: note.version,
+              attachments: note.attachments,
+              isNew: false,
+              syncStatus: 'synced' as const
+            };
+          }
+          return tab;
+        });
+        console.log('Tabs after update:', updatedTabs);
+        return updatedTabs;
+      });
     },
     isNoteOpenInAnyTab: (noteId: string) => {
       return tabs.some(tab => tab.noteId === noteId || tab.id === noteId);
     },
+    addPendingAttachment: (tabId: string, attachment: Attachment) => {
+      addPendingAttachment(tabId, attachment);
+    },
+    handleSave: async (tabId: string, note: Note) => {
+      await handleSave(tabId, note);
+    }
   }));
 
   const handleTabClick = (tabId: string) => {
@@ -483,12 +518,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   // Handle attachment operations
-  const handleAttachmentAdd = async (tabId: string, attachment: NoteAttachment) => {
+  const handleAttachmentAdd = async (tabId: string, attachment: Attachment) => {
     const tab = tabs.find(t => t.id === tabId);
     if (!tab?.noteId) return;
 
     try {
-      const updatedNote = await NotesDB.addAttachment(tab.noteId, attachment);
+      const updatedNote = await NotesDB.addAttachment(tab.noteId, attachment.url, tab.title);
       updateTabState(tabId, {
         attachments: updatedNote.attachments,
         version: updatedNote.version,
@@ -499,19 +534,92 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
   };
 
-  const handleAttachmentRemove = async (tabId: string, attachmentUrl: string) => {
+  const handleAttachmentRemove = async (tabId: string, attachment: Attachment) => { 
+    setTabs(prevTabs => prevTabs.map(tab => {
+      if (tab.id === tabId) {
+        return {
+          ...tab,
+          attachments: tab.attachments?.filter(a => a.id !== attachment.id) || [],
+          syncStatus: 'pending' as const // Mark tab as pending on attachment removal
+        };
+      }
+      return tab;
+    }));
+
+    // Update parent components about the change
+    const updatedTab = tabs.find(t => t.id === tabId);
+    if (updatedTab) {
+      onContentChange(
+        tabId,
+        updatedTab.title,
+        updatedTab.content,
+        updatedTab.version,
+        updatedTab.noteId
+      );
+    }
+  };
+
+  const addPendingAttachment = (tabId: string, attachment: Attachment) => {
+    setTabs(prevTabs => prevTabs.map(tab => {
+      if (tab.id === tabId) {
+        return {
+          ...tab,
+          attachments: [...(tab.attachments || []), attachment],
+          syncStatus: 'pending' as const
+        };
+      }
+      return tab;
+    }));
+  };
+
+  // Update save logic to commit pending attachments
+  const handleSave = async (tabId: string, note: Note) => {
     const tab = tabs.find(t => t.id === tabId);
-    if (!tab?.noteId) return;
+    if (!tab) return;
 
     try {
-      const updatedNote = await NotesDB.removeAttachment(tab.noteId, attachmentUrl);
-      updateTabState(tabId, {
-        attachments: updatedNote.attachments,
-        version: updatedNote.version,
-        syncStatus: 'synced' as const
+      let savedNote: Note;
+      
+      if (!tab.noteId) {
+        // This is a new tab without an existing note
+        savedNote = await NotesDB.createNote(
+          tab.title,
+          tab.content,
+          tab.attachments // Pass any pending attachments
+        );
+      } else {
+        // This is an existing note
+        savedNote = await NotesDB.updateNote(
+          tab.noteId,
+          tab.title,
+          tab.content,
+          tab.version,
+          tab.attachments
+        );
+      }
+
+      // Update tab with saved note data
+      setTabs(prevTabs => prevTabs.map(t => 
+        t.id === tabId ? {
+          ...t,
+          noteId: savedNote.id,
+          version: savedNote.version,
+          attachments: savedNote.attachments,
+          syncStatus: 'synced' as const
+        } : t
+      ));
+
+      console.log('Tab updated after save:', {
+        tabId,
+        noteId: savedNote.id,
+        isNewNote: !tab.noteId,
+        attachments: savedNote.attachments
       });
+
+      return savedNote;
     } catch (error) {
-      console.error('Failed to remove attachment:', error);
+      console.error('Failed to handle save:', error);
+      throw error;
     }
   };
 
@@ -565,7 +673,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 onTitleChange={(title) => handleTitleChange(activeTab.id, title)}
                 onContentChange={(content) => handleContentChange(activeTab.id, content)}
                 onAttachmentAdd={(attachment) => handleAttachmentAdd(activeTab.id, attachment)}
-                onAttachmentRemove={(url) => handleAttachmentRemove(activeTab.id, url)}
+                onAttachmentRemove={(attachment) => handleAttachmentRemove(activeTab.id, attachment)}
               />
             </div>
           );
