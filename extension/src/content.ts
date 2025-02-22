@@ -5,6 +5,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Popup from './components/Popup';
 import './styles/index.css';
+import { ScreenshotSelection } from './UI/selection';
 
 // Establish connection with background script
 const port = chrome.runtime.connect({ name: 'content-script' });
@@ -115,7 +116,7 @@ export function updateInterfaceVisibility(visible: boolean) {
   isInterfaceVisible = visible;
 }
 
-// Simplified message handling
+// Add to message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'toggleInterface') {
     const success = toggleInterface();
@@ -123,6 +124,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'hideInterface') {
     const success = toggleInterface(false); // Force hide
     sendResponse({ success });
+  } else if (message.type === 'initScreenshotSelection') {
+    new ScreenshotSelection();
+    sendResponse({ success: true });
   }
   return true;
 });

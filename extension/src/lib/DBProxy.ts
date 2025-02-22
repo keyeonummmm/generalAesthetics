@@ -54,8 +54,13 @@ export class DBProxy {
     return this.sendMessage('updateNote', [id, title, content, expectedVersion, attachments]);
   }
 
-  static async addAttachment(noteId: string, url: string, title: string | undefined): Promise<Note> {
-    return this.sendMessage('addAttachment', [noteId, url, title]);
+  static async addAttachment(noteId: string,
+    url: string,
+    title: string | undefined,
+    screenshotData?: string,
+    screenshotType?: 'visible' | 'full'
+  ): Promise<Note> {
+    return this.sendMessage('addAttachment', [noteId, url, title, screenshotData, screenshotType]);
   }
 
   static async removeAttachment(noteId: string, attachmentId: number): Promise<Note> {

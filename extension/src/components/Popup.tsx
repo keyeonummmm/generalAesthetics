@@ -71,7 +71,6 @@ const Popup: React.FC = () => {
   };
 
   const handleEditNote = (note: Note) => {
-    // TabManager will handle creating new tab and setting content
     if (tabManagerRef.current) {
       tabManagerRef.current.addTab(note);
     }
@@ -80,7 +79,6 @@ const Popup: React.FC = () => {
 
   const handleUrlCapture = async () => {
     try {
-      // Use the message passing system instead of direct chrome.tabs.query
       const response = await new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
         chrome.runtime.sendMessage({ type: 'CAPTURE_URL' }, (result) => {
           resolve(result || { success: false, error: 'No response' });
@@ -107,6 +105,46 @@ const Popup: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to capture URL:', error);
+      throw error;
+    }
+  };
+
+  const handleScreenshotCapture = async (type: 'visible' | 'full') => {
+    try {
+      console.log(`Initiating ${type} screenshot capture`);
+      
+      const response = await new Promise<{ success: boolean; screenshotData?: string; error?: string }>((resolve) => {
+        const timeoutId = setTimeout(() => {
+          resolve({ success: false, error: 'Capture timeout' });
+        }, 30000); // 30 second timeout
+
+        chrome.runtime.sendMessage(
+          { type: 'CAPTURE_SCREENSHOT', screenshotType: type },
+          (result) => {
+            clearTimeout(timeoutId);
+            resolve(result || { success: false, error: 'No response' });
+          }
+        );
+      });
+
+      if (!response.success || !response.screenshotData) {
+        throw new Error(response.error || 'Failed to capture screenshot');
+      }
+      
+      const pendingAttachment: Attachment = {
+        type: "screenshot",
+        id: Date.now(),
+        screenshotData: response.screenshotData,
+        screenshotType: type,
+        createdAt: new Date().toISOString(),
+        syncStatus: 'pending'
+      };
+
+      if (tabManagerRef.current) {
+        tabManagerRef.current.addPendingAttachment(activeNote.tabId, pendingAttachment);
+      }
+    } catch (error) {
+      console.error('Screenshot capture failed:', error);
       throw error;
     }
   };
@@ -165,6 +203,7 @@ const Popup: React.FC = () => {
             isOpen={isAttachmentMenuOpen}
             onClose={() => setIsAttachmentMenuOpen(false)}
             onUrlCapture={handleUrlCapture}
+            onScreenshotCapture={handleScreenshotCapture}
           />
         </div>
         <SaveButton 

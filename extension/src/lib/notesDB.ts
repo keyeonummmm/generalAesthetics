@@ -191,29 +191,38 @@ export class NotesDB {
       request.onerror = () => reject(request.error);
     });
   }
-
-  static async addAttachment(noteId: string, url: string, title: string | undefined): Promise<Note> {
+  
+  static async addAttachment(noteId: string,
+    url: string,
+    title: string | undefined,
+    screenshotData?: string,
+    screenshotType?: 'visible' | 'full'
+  ): Promise<Note> {
     console.log('NotesDB.addAttachment called:', {
       noteId,
       url,
-      title
+      title,
+      screenshotData,
+      screenshotType
     });
-
+    
     const note = await this.getNote(noteId);
     if (!note) {
       throw new Error('Note not found');
     }
-
+    
     console.log('Found note for attachment:', note);
-
+    
     const attachment: Attachment = {
       type: "url",
       id: Date.now(),
       url,
+      screenshotData,
+      screenshotType,
       createdAt: formatTimestamp(),
       syncStatus: 'pending'
     };
-
+    
     const updatedNote: Note = {
       ...note,
       attachments: [

@@ -1,7 +1,9 @@
 export interface Attachment {
-  type: "url"
+  type: "url" | "screenshot";
   id: number;
-  url: string;
+  url?: string;
+  screenshotData?: string; // base64 encoded image data
+  screenshotType?: 'visible' | 'full'; // type of screenshot
   createdAt: string;
   syncStatus: 'pending' | 'synced';
 }

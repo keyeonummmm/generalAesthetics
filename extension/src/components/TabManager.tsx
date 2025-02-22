@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import NoteInput from './NoteInput';
 import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
@@ -41,6 +41,7 @@ export interface TabManagerRef {
   updateTabWithId: (tabId: string, note: Note) => void;
   isNoteOpenInAnyTab: (noteId: string) => boolean;
   addPendingAttachment: (tabId: string, attachment: Attachment) => void;
+  
   handleSave: (tabId: string, note: Note) => Promise<void>;
 }
 
@@ -560,7 +561,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (!tab?.noteId) return;
 
     try {
-      const updatedNote = await NotesDB.addAttachment(tab.noteId, attachment.url, tab.title);
+      const updatedNote = await NotesDB.addAttachment(
+        tab.noteId,
+        attachment.url || '', 
+        tab.title, 
+        attachment.screenshotData,
+        attachment.screenshotType);
       updateTabState(tabId, {
         attachments: updatedNote.attachments,
         version: updatedNote.version,
@@ -577,7 +583,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         return {
           ...tab,
           attachments: tab.attachments?.filter(a => a.id !== attachment.id) || [],
-          syncStatus: 'pending' as const // Mark tab as pending on attachment removal
+          syncStatus: 'pending' as const
         };
       }
       return tab;

@@ -1,13 +1,3 @@
-// Background script for the extension
-console.log('Background script initializing...');
-
-// Ensure chrome APIs are available
-if (!chrome?.tabs?.query) {
-  console.error('Required chrome APIs not available');
-  throw new Error('Required chrome APIs not available');
-}
-
-// Track which tabs have the content script loaded
 const loadedTabs = new Set<number>();
 
 // Listen for extension installation
@@ -29,7 +19,7 @@ chrome.runtime.onConnect.addListener((port) => {
   }
 });
 
-// Handle browser action clicks with better error handling
+// Handle browser action clicks
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id) return;
 
@@ -44,9 +34,6 @@ chrome.action.onClicked.addListener(async (tab) => {
         target: { tabId: tab.id },
         files: ['content.css']
       });
-      
-      // Increased delay for more reliable initialization
-      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     await chrome.tabs.sendMessage(tab.id, { type: 'toggleInterface' });
@@ -57,35 +44,62 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 import { NotesDB } from './lib/notesDB';
 
-// Consolidate all message listeners into one
+// Consolidated message handling
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Background received message:', message, 'from sender:', sender);
-
   if (message.type === 'CAPTURE_URL') {
-    try {
-      console.log('Processing URL capture request');
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        try {
-          console.log('Active tabs:', tabs);
-          const url = tabs[0]?.url;
-          if (url) {
-            console.log('Sending URL:', url);
-            sendResponse({ success: true, url: url });
-          } else {
-            console.log('No URL found');
-            sendResponse({ success: false, error: 'No URL found' });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const url = tabs[0]?.url;
+      sendResponse({ success: !!url, url, error: url ? undefined : 'No URL found' });
+    });
+    return true; // Keep message channel open for async response
+  }
+
+  if (message.type === 'CAPTURE_SCREENSHOT') {
+    (async () => {
+      try {
+        console.log('Background: Starting screenshot capture:', message.screenshotType);
+        
+        if (message.screenshotType === 'visible') {
+          const captureData = await chrome.tabs.captureVisibleTab(
+            chrome.windows.WINDOW_ID_CURRENT,
+            { format: 'jpeg', quality: 100 }
+          );
+          console.log('Background: Visible capture successful');
+          sendResponse({ success: true, screenshotData: captureData });
+        } else if (message.screenshotType === 'full') {
+          console.log('Background: Initializing section capture');
+          const activeTab = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!activeTab[0]?.id) {
+            throw new Error('No active tab found');
           }
-        } catch (error) {
-          console.error('Error processing tabs:', error);
-          sendResponse({ success: false, error: 'Error processing tabs' });
+
+          await chrome.scripting.executeScript({
+            target: { tabId: activeTab[0].id },
+            func: () => {
+              const event = new CustomEvent('init-screenshot-selection');
+              document.dispatchEvent(event);
+            }
+          });
+
+          chrome.runtime.onMessage.addListener(function listener(msg) {
+            if (msg.type === 'SELECTION_CAPTURE') {
+              chrome.runtime.onMessage.removeListener(listener);
+              sendResponse({ success: true, screenshotData: msg.data });
+            } else if (msg.type === 'SELECTION_CAPTURE_ERROR') {
+              chrome.runtime.onMessage.removeListener(listener);
+              sendResponse({ success: false, error: msg.error });
+            }
+          });
         }
-      });
-      return true; // Keep the message channel open for async response
-    } catch (error) {
-      console.error('Error in URL capture:', error);
-      sendResponse({ success: false, error: 'Error capturing URL' });
-      return true;
-    }
+      } catch (error) {
+        console.error('Background: Screenshot capture failed:', error);
+        sendResponse({ 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    })();
+    return true;
   }
 
   if (message.type === 'DB_OPERATION') {
@@ -98,15 +112,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+
+  if (message.type === 'CAPTURE_VISIBLE_TAB' && sender.tab?.id) {
+    (async () => {
+      try {
+        console.log('Background: Capturing visible tab area');
+        const captureData = await chrome.tabs.captureVisibleTab(
+          chrome.windows.WINDOW_ID_CURRENT,
+          { format: 'jpeg', quality: 100 }
+        );
+        console.log('Background: Area capture successful');
+        sendResponse({ success: true, captureData });
+      } catch (error) {
+        console.error('Background: Area capture failed:', error);
+        sendResponse({ 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    })();
+    return true;
+  }
 });
 
 async function handleDBOperation(message: any, sendResponse: (response: any) => void) {
   try {
     const { method, params } = message;
-    
-    // Call the appropriate NotesDB method
     const result = await (NotesDB as any)[method](...params);
-    
     sendResponse({ data: result });
   } catch (error) {
     console.error('DB operation failed:', error);
@@ -114,6 +146,91 @@ async function handleDBOperation(message: any, sendResponse: (response: any) => 
   }
 }
 
+async function captureFullPage(tabId: number): Promise<string> {
+  // Get page dimensions
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => ({
+      width: Math.max(
+        document.documentElement.scrollWidth,
+        document.documentElement.offsetWidth,
+        document.documentElement.clientWidth
+      ),
+      height: Math.max(
+        document.documentElement.scrollHeight,
+        document.documentElement.offsetHeight,
+        document.documentElement.clientHeight
+      ),
+      viewportHeight: window.innerHeight
+    })
+  });
+
+  const dimensions = result as { width: number; height: number; viewportHeight: number };
+  
+  // Save original scroll position
+  const [{ result: originalScroll }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => window.scrollY
+  });
+
+  const captures: string[] = [];
+  
+  try {
+    // Capture each viewport height section
+    for (let y = 0; y < dimensions.height; y += dimensions.viewportHeight) {
+      // Scroll to position
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (scrollY) => window.scrollTo(0, scrollY),
+        args: [y]
+      });
+
+      // Wait for scroll and repaint
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Capture visible area
+      const dataUrl = await chrome.tabs.captureVisibleTab(
+        chrome.windows.WINDOW_ID_CURRENT,
+        { format: 'jpeg', quality: 100 }
+      );
+      captures.push(dataUrl);
+    }
+
+    // Restore original scroll position
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (scrollY) => window.scrollTo(0, scrollY),
+      args: [originalScroll || 0]
+    });
+
+    return await stitchCaptures(captures, dimensions.width, dimensions.height);
+  } catch (error) {
+    console.error('Full page capture failed:', error);
+    throw error;
+  }
+}
+
+async function stitchCaptures(
+  captures: string[],
+  width: number,
+  height: number
+): Promise<string> {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get canvas context');
+
+  let y = 0;
+  for (const dataUrl of captures) {
+    const img = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    ctx.drawImage(img, 0, y);
+    y += img.height;
+  }
+
+  return canvas.toDataURL('image/jpeg');
+}
+
 console.log('Background script initialized successfully');
 
-export {}; // Add this to make it a module 
+export {}; // Keep module format 
