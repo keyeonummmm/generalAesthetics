@@ -80,14 +80,22 @@ const Popup: React.FC = () => {
 
   const handleUrlCapture = async () => {
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab.url) return;
+      // Use the message passing system instead of direct chrome.tabs.query
+      const response = await new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
+        chrome.runtime.sendMessage({ type: 'CAPTURE_URL' }, (result) => {
+          resolve(result || { success: false, error: 'No response' });
+        });
+      });
 
-      // Create pending attachment instead of saving to DB
+      if (!response.success || !response.url) {
+        throw new Error(response.error || 'Failed to capture URL');
+      }
+
+      // Create pending attachment with the received URL
       const pendingAttachment: Attachment = {
         type: "url",
         id: Date.now(), // Temporary ID
-        url: tab.url,
+        url: response.url,
         createdAt: new Date().toISOString(),
         syncStatus: 'pending'
       };
@@ -114,7 +122,6 @@ const Popup: React.FC = () => {
     }
   };
 
-  // Create ref for TabManager to access its methods
   const tabManagerRef = React.useRef<TabManagerRef | null>(null);
 
   return (

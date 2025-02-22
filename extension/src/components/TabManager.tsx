@@ -296,10 +296,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const removeTabByNoteId = (noteId: string) => {
-    // First clean the content of any tabs with this noteId
     removeTabContent(noteId);
-    
-    // Then proceed with normal tab removal if needed
     setTabs(prevTabs => {
       const isActiveTab = prevTabs.some(tab => 
         (tab.noteId === noteId || tab.id === noteId) && tab.id === activeTabId
@@ -444,7 +441,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       
       const tab = tabs.find(t => t.id === tabId);
       if (onContentChange) {
-        // Pass the tracked note ID
         onContentChange(
           tabId, 
           title, 
@@ -537,7 +533,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           updatedTab.title,
           updatedTab.content,
           updatedTab.version,
-          updatedTab.noteId // Pass the noteId in content change
+          updatedTab.noteId
         );
       }
     }
@@ -613,7 +609,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }));
   };
 
-  // Update save logic to commit pending attachments
   const handleSave = async (tabId: string, note: Note) => {
     const tab = tabs.find(t => t.id === tabId);
     if (!tab) return;
@@ -622,14 +617,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       let savedNote: Note;
       
       if (!tab.noteId) {
-        // This is a new tab without an existing note
         savedNote = await NotesDB.createNote(
           tab.title,
           tab.content,
-          tab.attachments // Pass any pending attachments
+          tab.attachments
         );
       } else {
-        // This is an existing note
         savedNote = await NotesDB.updateNote(
           tab.noteId,
           tab.title,
@@ -639,7 +632,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         );
       }
 
-      // Update tab with saved note data
       setTabs(prevTabs => prevTabs.map(t => 
         t.id === tabId ? {
           ...t,

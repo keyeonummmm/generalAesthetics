@@ -4,7 +4,7 @@ import '../styles/components/attachment-menu.css';
 interface AttachmentMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  onUrlCapture: () => Promise<void>;
+  onUrlCapture: (url: string) => Promise<void>;
 }
 
 export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
@@ -17,8 +17,18 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
   const handleUrlCapture = async () => {
     setIsLoading(true);
     try {
-      await onUrlCapture();
-      onClose();
+      const response = await new Promise<{ success: boolean; url?: string; error?: string }>((resolve) => {
+        chrome.runtime.sendMessage({ type: 'CAPTURE_URL' }, (result) => {
+          resolve(result || { success: false, error: 'No response' });
+        });
+      });
+
+      if (response.success && response.url) {
+        await onUrlCapture(response.url);
+        onClose();
+      } else {
+        throw new Error(response.error || 'Failed to capture URL');
+      }
     } catch (error) {
       console.error('Failed to capture URL:', error);
       alert('Failed to capture URL. Please try again.');

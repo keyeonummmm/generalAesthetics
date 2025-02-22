@@ -1,7 +1,3 @@
-// Menu.tsx
-// This component is responsible for the menu that appears when the user clicks the menu button.
-// Theme toggle button
-
 import React, { useState, useEffect } from 'react';
 import { ThemeManager } from '../UI/component';
 

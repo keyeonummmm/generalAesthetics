@@ -1,7 +1,3 @@
-// ActionButton.tsx
-// This component is responsible for the behavior of the edit, menu, and close buttons, 
-// preventing windows from closing by clicking on areas outside the plugin.
-
 import React from 'react';
 import { shadowRootRef, updateInterfaceVisibility } from '../content';
 

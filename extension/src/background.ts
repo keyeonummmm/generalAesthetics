@@ -1,5 +1,11 @@
 // Background script for the extension
-console.log('Background script initialized');
+console.log('Background script initializing...');
+
+// Ensure chrome APIs are available
+if (!chrome?.tabs?.query) {
+  console.error('Required chrome APIs not available');
+  throw new Error('Required chrome APIs not available');
+}
 
 // Track which tabs have the content script loaded
 const loadedTabs = new Set<number>();
@@ -51,11 +57,46 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 import { NotesDB } from './lib/notesDB';
 
-// Handle database operations
+// Consolidate all message listeners into one
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Background received message:', message, 'from sender:', sender);
+
+  if (message.type === 'CAPTURE_URL') {
+    try {
+      console.log('Processing URL capture request');
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        try {
+          console.log('Active tabs:', tabs);
+          const url = tabs[0]?.url;
+          if (url) {
+            console.log('Sending URL:', url);
+            sendResponse({ success: true, url: url });
+          } else {
+            console.log('No URL found');
+            sendResponse({ success: false, error: 'No URL found' });
+          }
+        } catch (error) {
+          console.error('Error processing tabs:', error);
+          sendResponse({ success: false, error: 'Error processing tabs' });
+        }
+      });
+      return true; // Keep the message channel open for async response
+    } catch (error) {
+      console.error('Error in URL capture:', error);
+      sendResponse({ success: false, error: 'Error capturing URL' });
+      return true;
+    }
+  }
+
   if (message.type === 'DB_OPERATION') {
     handleDBOperation(message, sendResponse);
-    return true; // Keep message channel open for async response
+    return true;
+  }
+
+  if (message.type === 'hideInterface' && sender.tab?.id) {
+    chrome.tabs.sendMessage(sender.tab.id, { type: 'toggleInterface' });
+    sendResponse({ success: true });
+    return true;
   }
 });
 
@@ -73,14 +114,6 @@ async function handleDBOperation(message: any, sendResponse: (response: any) => 
   }
 }
 
-// Handle interface visibility messages
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'hideInterface' && sender.tab?.id) {
-    // Use Chrome's messaging to tell content script to hide
-    chrome.tabs.sendMessage(sender.tab.id, { type: 'toggleInterface' });
-    sendResponse({ success: true });
-  }
-  return true; // Keep message channel open for async response
-});
+console.log('Background script initialized successfully');
 
 export {}; // Add this to make it a module 
