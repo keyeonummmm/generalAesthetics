@@ -131,15 +131,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Keep Chrome native hide handling
-chrome.runtime.onSuspend.addListener(() => {
-  isInterfaceVisible = false;
-  if (shadowRootRef) {
-    const appContainer = shadowRootRef.querySelector('.ga-notes-container');
-    if (appContainer instanceof HTMLElement) {
-      appContainer.style.display = 'none';
-    }
-  }
-});
-
 export {}; // Keep module format 

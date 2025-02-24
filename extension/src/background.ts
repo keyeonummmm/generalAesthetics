@@ -231,6 +231,21 @@ async function stitchCaptures(
   return canvas.toDataURL('image/jpeg');
 }
 
+// Handle extension suspension
+chrome.runtime.onSuspend.addListener(async () => {
+  // Get all tabs where our content script is running
+  const tabs = Array.from(loadedTabs);
+  
+  // Send hide message to all active content scripts
+  for (const tabId of tabs) {
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'hideInterface' });
+    } catch (error) {
+      console.error(`Failed to hide interface in tab ${tabId}:`, error);
+    }
+  }
+});
+
 console.log('Background script initialized successfully');
 
 export {}; // Keep module format 
