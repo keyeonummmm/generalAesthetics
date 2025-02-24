@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import Popup from './components/Popup';
 import './styles/index.css';
 import { ScreenshotSelection } from './UI/selection';
+import { ThemeManager, createThemeToggle } from './UI/component';
 
 // Establish connection with background script
 const port = chrome.runtime.connect({ name: 'content-script' });
@@ -15,6 +16,7 @@ let isInterfaceVisible = false;
 let isInitialized = false;
 let root: ReturnType<typeof createRoot> | null = null;
 export let shadowRootRef: ShadowRoot | null = null;
+export let themeToggle: { toggle: () => Promise<void> } | null = null;
 
 function injectApp() {
   // Prevent multiple initializations
@@ -34,13 +36,9 @@ function injectApp() {
   const appContainer = document.createElement('div');
   appContainer.className = 'ga-notes-container';
   
-  // Add theme class based on user preference
-  appContainer.classList.add(
-    window.matchMedia('(prefers-color-scheme: dark)').matches 
-      ? 'theme-dark' 
-      : 'theme-light'
-  );
-
+  // Initialize theme manager and create theme toggle
+  themeToggle = createThemeToggle(appContainer);
+  
   // Create style element for our CSS
   const style = document.createElement('style');
   style.textContent = require('./styles/index.css').default;
@@ -55,15 +53,6 @@ function injectApp() {
   // Create root and render
   root = createRoot(appContainer);
   root.render(React.createElement(Popup));
-  
-  // Listen for theme changes
-  const themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  const handleThemeChange = (e: MediaQueryListEvent) => {
-    appContainer.classList.toggle('theme-dark', e.matches);
-    appContainer.classList.toggle('theme-light', !e.matches);
-  };
-  
-  themeMediaQuery.addEventListener('change', handleThemeChange);
 
   isInitialized = true;
   return appContainer;
@@ -116,6 +105,13 @@ export function updateInterfaceVisibility(visible: boolean) {
   isInterfaceVisible = visible;
 }
 
+// Export function to toggle theme
+export function toggleTheme() {
+  themeToggle?.toggle().catch(error => {
+    console.error('Failed to toggle theme:', error);
+  });
+}
+
 // Add to message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'toggleInterface') {
@@ -127,8 +123,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'initScreenshotSelection') {
     new ScreenshotSelection();
     sendResponse({ success: true });
+  } else if (message.type === 'toggleTheme') {
+    toggleTheme();
+    sendResponse({ success: true });
   }
   return true;
 });
 
-export {}; // Keep module format 
+export {};

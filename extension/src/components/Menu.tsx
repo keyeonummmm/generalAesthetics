@@ -7,15 +7,18 @@ interface MenuProps {
 }
 
 const Menu: React.FC<MenuProps> = ({ isOpen, onClose }) => {
-  const [theme, setTheme] = useState(ThemeManager.getSavedTheme());
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(ThemeManager.getCurrentTheme());
 
   useEffect(() => {
-    ThemeManager.initialize();
+    const updateTheme = () => {
+      setTheme(ThemeManager.getCurrentTheme());
+    };
+    updateTheme();
   }, []);
 
-  const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
-    ThemeManager.setTheme(newTheme);
-    setTheme(newTheme);
+  const handleThemeChange = async (newTheme: 'light' | 'dark' | 'system') => {
+    await ThemeManager.setTheme(newTheme);
+    setTheme(ThemeManager.getCurrentTheme());
   };
 
   if (!isOpen) return null;

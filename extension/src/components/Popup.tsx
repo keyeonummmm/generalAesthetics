@@ -33,8 +33,7 @@ const Popup: React.FC = () => {
   
   // Initialize theme when component mounts
   useEffect(() => {
-    const savedTheme = ThemeManager.getSavedTheme();
-    ThemeManager.setTheme(savedTheme);
+    ThemeManager.setTheme(ThemeManager.getCurrentTheme());
 
     // Add beforeunload handler
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
