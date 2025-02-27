@@ -12,6 +12,7 @@ import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
 import { shadowRootRef } from '../content';
+import { processImage, ImageProcessingOptions } from '../lib/imageProcessor';
 
 const Popup: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -130,13 +131,36 @@ const Popup: React.FC = () => {
         throw new Error(response.error || 'Failed to capture screenshot');
       }
       
+      // Process the image through our WebP conversion and compression pipeline
+      // without using the cache
+      const processingOptions: ImageProcessingOptions = {
+        format: 'webp',
+        quality: 85, // Good balance between quality and size
+      };
+      
+      // Process the image (convert to WebP and compress)
+      const processedImage = await processImage(response.screenshotData, processingOptions);
+      
+      console.log('Image processed:', {
+        format: processedImage.format,
+        originalSize: Math.round(processedImage.originalSize / 1024) + 'KB',
+        processedSize: Math.round(processedImage.processedSize / 1024) + 'KB',
+        compressionRatio: processedImage.compressionRatio.toFixed(2) + 'x'
+      });
+      
       const pendingAttachment: Attachment = {
         type: "screenshot",
         id: Date.now(),
-        screenshotData: response.screenshotData,
+        screenshotData: processedImage.dataUrl,
         screenshotType: type,
         createdAt: new Date().toISOString(),
-        syncStatus: 'pending'
+        syncStatus: 'pending',
+        metadata: {
+          format: processedImage.format,
+          originalSize: processedImage.originalSize,
+          processedSize: processedImage.processedSize,
+          compressionRatio: processedImage.compressionRatio
+        }
       };
 
       if (tabManagerRef.current) {
