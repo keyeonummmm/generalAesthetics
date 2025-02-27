@@ -1,6 +1,3 @@
-// SaveButton component
-// communicates with the NotesDB to save the note
-
 import React, { useState } from 'react';
 import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
