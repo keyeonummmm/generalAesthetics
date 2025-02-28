@@ -13,6 +13,7 @@ import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
 import { shadowRootRef } from '../content';
 import { processImage, ImageProcessingOptions } from '../lib/imageProcessor';
+import { createLazyLoadableImage } from '../lib/imageProcessor';
 
 const Popup: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -31,6 +32,7 @@ const Popup: React.FC = () => {
   });
   const [isNotesManagerOpen, setIsNotesManagerOpen] = useState(false);
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Initialize theme when component mounts
   useEffect(() => {
@@ -132,26 +134,42 @@ const Popup: React.FC = () => {
       }
       
       // Process the image through our WebP conversion and compression pipeline
-      // without using the cache
-      const processingOptions: ImageProcessingOptions = {
-        format: 'webp',
-        quality: 85, // Good balance between quality and size
+      const processingOptions = {
+        format: 'webp' as const,
+        quality: 85,
+        progressive: true
       };
       
-      // Process the image (convert to WebP and compress)
+      // Show loading indicator
+      setIsLoading(true);
+      
+      // Process the image (convert to WebP, compress, and generate thumbnail)
       const processedImage = await processImage(response.screenshotData, processingOptions);
+      
+      // Get image dimensions
+      const img = new Image();
+      img.src = response.screenshotData;
+      await new Promise(resolve => {
+        img.onload = resolve;
+      });
+      
+      // Create a lazy-loadable version with thumbnail
+      const lazyLoadable = await createLazyLoadableImage(response.screenshotData);
       
       console.log('Image processed:', {
         format: processedImage.format,
         originalSize: Math.round(processedImage.originalSize / 1024) + 'KB',
         processedSize: Math.round(processedImage.processedSize / 1024) + 'KB',
-        compressionRatio: processedImage.compressionRatio.toFixed(2) + 'x'
+        compressionRatio: processedImage.compressionRatio.toFixed(2) + 'x',
+        hasThumbnail: !!processedImage.thumbnailUrl
       });
       
-      const pendingAttachment: Attachment = {
-        type: "screenshot",
+      // Create attachment with thumbnail and metadata
+      const attachment: Attachment = {
+        type: 'screenshot',
         id: Date.now(),
         screenshotData: processedImage.dataUrl,
+        thumbnailData: processedImage.thumbnailUrl,
         screenshotType: type,
         createdAt: new Date().toISOString(),
         syncStatus: 'pending',
@@ -159,16 +177,22 @@ const Popup: React.FC = () => {
           format: processedImage.format,
           originalSize: processedImage.originalSize,
           processedSize: processedImage.processedSize,
-          compressionRatio: processedImage.compressionRatio
+          compressionRatio: processedImage.compressionRatio,
+          width: img.width,
+          height: img.height,
+          isLazyLoaded: true
         }
       };
-
-      if (tabManagerRef.current) {
-        tabManagerRef.current.addPendingAttachment(activeNote.tabId, pendingAttachment);
-      }
+      
+      // Add the attachment to the active tab
+      await tabManagerRef.current?.addPendingAttachment(activeNote.tabId, attachment);
+      
+      // Hide loading indicator
+      setIsLoading(false);
     } catch (error) {
       console.error('Screenshot capture failed:', error);
-      throw error;
+      setIsLoading(false);
+      alert('Failed to capture screenshot. Please try again.');
     }
   };
 

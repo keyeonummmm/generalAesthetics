@@ -50,8 +50,10 @@ export interface StorageStats {
     count: number;
     totalOriginalSize: number;
     totalProcessedSize: number;
+    totalThumbnailSize: number;
     averageCompressionRatio: number;
     savedSpace: number;
+    lazyLoadedCount: number;
   };
   
   // Metadata
@@ -127,7 +129,9 @@ export class StorageAnalytics {
     let imageCount = 0;
     let totalOriginalSize = 0;
     let totalProcessedSize = 0;
+    let totalThumbnailSize = 0;
     let totalCompressionRatio = 0;
+    let lazyLoadedCount = 0;
     
     // Attachment type stats
     const attachmentTypeMap = new Map<string, { count: number; size: number }>();
@@ -172,10 +176,26 @@ export class StorageAnalytics {
           let attachmentSize = 0;
           
           // For screenshots, calculate from data URL
-          if (attachment.type === 'screenshot' && attachment.screenshotData) {
+          if (attachment.type === 'screenshot') {
             imageCount++;
-            attachmentSize = this.calculateDataUrlSize(attachment.screenshotData);
-            totalProcessedSize += attachmentSize;
+            
+            // Count lazy loaded images
+            if (attachment.metadata?.isLazyLoaded) {
+              lazyLoadedCount++;
+            }
+            
+            // Calculate screenshot data size
+            if (attachment.screenshotData) {
+              attachmentSize += this.calculateDataUrlSize(attachment.screenshotData);
+              totalProcessedSize += attachmentSize;
+            }
+            
+            // Calculate thumbnail size if present
+            if (attachment.thumbnailData) {
+              const thumbnailSize = this.calculateDataUrlSize(attachment.thumbnailData);
+              totalThumbnailSize += thumbnailSize;
+              attachmentSize += thumbnailSize;
+            }
             
             // If we have metadata about original size
             if (attachment.metadata?.originalSize) {
@@ -271,8 +291,10 @@ export class StorageAnalytics {
         count: imageCount,
         totalOriginalSize,
         totalProcessedSize,
+        totalThumbnailSize,
         averageCompressionRatio,
-        savedSpace
+        savedSpace,
+        lazyLoadedCount
       },
       
       lastUpdated: new Date().toISOString(),

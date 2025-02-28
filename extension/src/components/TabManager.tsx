@@ -4,13 +4,14 @@ import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import '../styles/components/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
-import { TabCacheManager, Tab as CacheTab, TabCache } from '../lib/TabCacheManager';
+import { TabCacheManager, Tab as CacheTab, TabCache, AttachmentReference } from '../lib/TabCacheManager';
 
 interface Tab {
   id: string;
   title: string;
   content: string;
-  attachments?: Attachment[];
+  attachments?: AttachmentReference[];
+  loadedAttachments?: Attachment[]; // New field to store loaded attachments
   isNew: boolean;
   version?: number;
   createdAt?: string;
@@ -70,6 +71,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   });
 
   const [activeTabId, setActiveTabId] = useState<string>('');
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
 
   // Load cache on mount
   useEffect(() => {
@@ -79,6 +81,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         if (cache && cache.tabs.length > 0) {
           setTabs(cache.tabs);
           setActiveTabId(cache.activeTabId);
+          
+          // Load attachments for the active tab
+          const activeTab = cache.tabs.find(tab => tab.id === cache.activeTabId);
+          if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
+            loadAttachmentsForTab(activeTab.id);
+          }
         } else {
           // Ensure there's always at least one tab
           const initialTab: Tab = { 
@@ -115,8 +123,14 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   useEffect(() => {
     const saveCache = async () => {
       if (tabs.length && activeTabId) {
+        // Don't save loadedAttachments to the cache
+        const tabsForCache = tabs.map(tab => {
+          const { loadedAttachments, ...tabWithoutLoadedAttachments } = tab;
+          return tabWithoutLoadedAttachments;
+        });
+        
         const cache: TabCache = {
-          tabs,
+          tabs: tabsForCache as any, // Type assertion needed due to the mapping
           activeTabId,
           lastUpdated: new Date().toISOString()
         };
@@ -149,8 +163,112 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         activeTab.version,
         activeTab.noteId
       );
+      
+      // Load attachments for the active tab if they're not already loaded
+      if (activeTab.attachments && activeTab.attachments.length > 0 && !activeTab.loadedAttachments) {
+        loadAttachmentsForTab(activeTab.id);
+      }
     }
   }, [tabs, activeTabId]);
+
+  // Function to load attachments for a specific tab
+  const loadAttachmentsForTab = async (tabId: string) => {
+    const tab = tabs.find(tab => tab.id === tabId);
+    if (!tab) {
+      console.error(`Cannot load attachments: Tab ${tabId} not found`);
+      return;
+    }
+    
+    if (!tab.attachments || tab.attachments.length === 0) {
+      console.log(`Tab ${tabId} has no attachments to load`);
+      return;
+    }
+    
+    // Skip if attachments are already loaded and match the expected count
+    if (tab.loadedAttachments && tab.loadedAttachments.length === tab.attachments.length) {
+      console.log(`Attachments for tab ${tabId} are already loaded (${tab.loadedAttachments.length} items)`);
+      return;
+    }
+    
+    console.log(`Loading ${tab.attachments.length} attachments for tab ${tabId}`);
+    setLoadingAttachments(true);
+    
+    try {
+      // First try to load from cache
+      const loadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab);
+      
+      // If we couldn't load all attachments from cache and this is a saved note,
+      // try loading them from the database
+      if (loadedAttachments.length < tab.attachments.length && tab.noteId) {
+        console.log(`Not all attachments were found in cache for note ${tab.noteId}. Trying to load from database...`);
+        
+        try {
+          // Get the full note with attachments from the database
+          const fullNote = await NotesDB.getNote(tab.noteId);
+          
+          if (fullNote && fullNote.attachments && fullNote.attachments.length > 0) {
+            console.log(`Found ${fullNote.attachments.length} attachments in database for note ${tab.noteId}`);
+            
+            // If we found attachments in the database, update the cache with them
+            const currentCache = await TabCacheManager.initCache();
+            if (currentCache) {
+              for (const attachment of fullNote.attachments) {
+                // Only add if it has the required data and isn't already loaded
+                if ((attachment.screenshotData || attachment.url) && 
+                    !loadedAttachments.some(a => a.id === attachment.id)) {
+                  console.log(`Restoring attachment ${attachment.id} to cache for note ${tab.noteId}`);
+                  await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
+                }
+              }
+              
+              // After updating the cache, try loading again
+              const reloadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab);
+              
+              if (reloadedAttachments.length > loadedAttachments.length) {
+                console.log(`Successfully restored ${reloadedAttachments.length - loadedAttachments.length} attachments from database to cache`);
+                
+                // Use the reloaded attachments
+                setTabs(prevTabs => prevTabs.map(t => {
+                  if (t.id === tabId) {
+                    return { ...t, loadedAttachments: reloadedAttachments };
+                  }
+                  return t;
+                }));
+                
+                return;
+              }
+            }
+          } else {
+            console.log(`No attachments found in database for note ${tab.noteId}`);
+          }
+        } catch (error) {
+          console.error(`Failed to load attachments from database for note ${tab.noteId}:`, error);
+        }
+      }
+      
+      console.log(`Successfully loaded ${loadedAttachments.length} attachments for tab ${tabId}`);
+      
+      // Update the tab with loaded attachments
+      setTabs(prevTabs => prevTabs.map(t => {
+        if (t.id === tabId) {
+          return { ...t, loadedAttachments };
+        }
+        return t;
+      }));
+      
+      // If we didn't load all attachments, log a warning
+      if (loadedAttachments.length < tab.attachments.length) {
+        console.warn(
+          `Warning: Only loaded ${loadedAttachments.length} of ${tab.attachments.length} attachments for tab ${tabId}. ` +
+          `Some attachments may be missing from the cache.`
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to load attachments for tab ${tabId}:`, error);
+    } finally {
+      setLoadingAttachments(false);
+    }
+  };
 
   const handleSaveComplete = (tabId: string, savedNote: Note) => {
     setTabs(prevTabs => prevTabs.map(tab =>
@@ -249,19 +367,103 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const addTab = (note?: Note) => {
-    const newTab = {
-      id: note?.id || `new-${uuidv4()}`,
-      title: note?.title || '',
-      content: note?.content || '',
-      version: note?.version,
-      noteId: note?.id, // Track noteId separately
+    console.log('Adding tab for note:', note ? {
+      id: note.id,
+      title: note.title,
+      hasAttachments: note.attachments && note.attachments.length > 0,
+      attachmentCount: note.attachments?.length || 0
+    } : 'new empty tab');
+    
+    // Check if this note is already open in a tab
+    const existingTab = tabs.find(tab => 
+      (note && (tab.id === note.id || tab.noteId === note.id))
+    );
+
+    if (existingTab) {
+      // If the note is already open, just set it as active
+      console.log(`Note ${note?.id} is already open in tab ${existingTab.id}, setting as active`);
+      setActiveTabId(existingTab.id);
+      
+      // Ensure attachments are loaded if they exist but aren't loaded yet
+      if (note && 
+          note.attachments && 
+          note.attachments.length > 0 && 
+          (!existingTab.loadedAttachments || existingTab.loadedAttachments.length < note.attachments.length)) {
+        console.log(`Ensuring attachments are loaded for existing tab ${existingTab.id}`);
+        setTimeout(() => {
+          loadAttachmentsForTab(existingTab.id);
+        }, 0);
+      }
+      return;
+    }
+
+    // Look for an empty tab that can be reused
+    const emptyTabIndex = tabs.findIndex(tab => 
+      tab.isNew && !tab.title && !tab.content && !tab.noteId
+    );
+
+    if (emptyTabIndex >= 0) {
+      // Reuse an empty tab
+      const updatedTabs = [...tabs];
+      const tabToUpdate = updatedTabs[emptyTabIndex];
+      console.log(`Reusing empty tab ${tabToUpdate.id} for note ${note?.id || 'new'}`);
+      
+      if (note) {
+        // Update the empty tab with the note's details
+        updatedTabs[emptyTabIndex] = {
+          ...tabToUpdate,
+          title: note.title,
+          content: note.content,
+          attachments: note.attachments,
+          isNew: false,
+          version: note.version,
+          noteId: note.id,
+          lastEdited: new Date().toISOString()
+        };
+      }
+      
+      setTabs(updatedTabs);
+      setActiveTabId(tabToUpdate.id);
+      
+      // Explicitly load attachments for the tab if it has any
+      if (note && note.attachments && note.attachments.length > 0) {
+        console.log(`Note has ${note.attachments.length} attachments, scheduling load for tab ${tabToUpdate.id}`);
+        // Use setTimeout to ensure the tab state is updated before loading attachments
+        setTimeout(() => {
+          loadAttachmentsForTab(tabToUpdate.id);
+        }, 100); // Slightly longer timeout to ensure state is fully updated
+      }
+      
+      return;
+    }
+
+    // Create a new tab
+    const newTabId = `tab-${Date.now()}`;
+    console.log(`Creating new tab ${newTabId} for note ${note?.id || 'new'}`);
+    
+    const newTab: Tab = {
+      id: newTabId,
+      title: note ? note.title : '',
+      content: note ? note.content : '',
+      attachments: note ? note.attachments : [],
       isNew: !note,
-      syncStatus: note ? 'synced' as const : 'pending' as const,
+      version: note ? note.version : undefined,
+      noteId: note ? note.id : undefined,
+      syncStatus: 'synced',
       lastEdited: new Date().toISOString()
     };
+
+    setTabs([...tabs, newTab]);
+    setActiveTabId(newTabId);
     
-    setTabs(prev => [...prev, newTab]);
-    setActiveTabId(newTab.id);
+    // Explicitly load attachments for the new tab if it has any
+    if (note && note.attachments && note.attachments.length > 0) {
+      console.log(`New tab has ${note.attachments.length} attachments, scheduling load for tab ${newTabId}`);
+      // Use setTimeout to ensure the tab state is updated before loading attachments
+      setTimeout(() => {
+        loadAttachmentsForTab(newTabId);
+      }, 100); // Slightly longer timeout to ensure state is fully updated
+    }
   };
 
   const updateTab = (note: Note) => {
@@ -421,7 +623,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         content: activeTab.content,
         version: activeTab.version,
         noteId: activeTab.noteId,
-        attachments: activeTab.attachments
+        attachments: activeTab.loadedAttachments
       };
     },
     updateTabContent: (id: string, title: string, content: string) => {
@@ -497,6 +699,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   const handleTabClick = (tabId: string) => {
     setActiveTabId(tabId);
+    
+    // Load attachments for the tab when it becomes active
+    const tab = tabs.find(tab => tab.id === tabId);
+    if (tab && tab.attachments && tab.attachments.length > 0 && !tab.loadedAttachments) {
+      loadAttachmentsForTab(tabId);
+    }
   };
 
   // Unified tab update function
@@ -567,14 +775,30 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           attachment.screenshotData,
           attachment.screenshotType);
           
-        updateTabState(tabId, {
-          attachments: updatedNote.attachments,
-          version: updatedNote.version,
-          syncStatus: 'synced' as const
-        });
+        // Update tab state with the new attachment references from the cache
+        // and add the full attachment to loadedAttachments
+        const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
+        if (updatedTab) {
+          updateTabState(tabId, {
+            attachments: updatedTab.attachments,
+            loadedAttachments: [...(tab.loadedAttachments || []), attachment],
+            version: updatedNote.version,
+            syncStatus: 'synced' as const
+          });
+        }
       } else {
-        // Just update the tab state with the new attachment
-        setTabs(updatedCache.tabs);
+        // Just update the tab state with the new attachment references
+        // and add the full attachment to loadedAttachments
+        const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
+        if (updatedTab) {
+          setTabs(prevTabs => prevTabs.map(t => 
+            t.id === tabId ? { 
+              ...t, 
+              attachments: updatedTab.attachments,
+              loadedAttachments: [...(t.loadedAttachments || []), attachment]
+            } : t
+          ));
+        }
       }
     } catch (error) {
       console.error('Failed to add attachment:', error);
@@ -595,11 +819,21 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       attachment.id.toString()
     );
     
-    setTabs(updatedCache.tabs);
-
-    // Update parent components about the change
+    // Update tabs with new attachment references and remove from loadedAttachments
     const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
     if (updatedTab) {
+      setTabs(prevTabs => prevTabs.map(t => {
+        if (t.id === tabId) {
+          return {
+            ...t,
+            attachments: updatedTab.attachments,
+            loadedAttachments: (t.loadedAttachments || []).filter(a => a.id !== attachment.id)
+          };
+        }
+        return t;
+      }));
+      
+      // Update parent components about the change
       onContentChange(
         tabId,
         updatedTab.title,
@@ -615,13 +849,38 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (!tab) return;
 
     try {
+      // Load full attachments if they're not already loaded
+      let attachmentsToSave: Attachment[] = [];
+      
+      if (tab.attachments && tab.attachments.length > 0) {
+        if (tab.loadedAttachments && tab.loadedAttachments.length === tab.attachments.length) {
+          // Use already loaded attachments
+          attachmentsToSave = tab.loadedAttachments;
+        } else {
+          // Load attachments from cache
+          console.log('Loading attachments for save operation');
+          attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
+        }
+      }
+      
+      console.log('Saving with attachments:', {
+        count: attachmentsToSave.length,
+        attachments: attachmentsToSave.map(a => ({
+          id: a.id,
+          type: a.type,
+          hasScreenshotData: !!a.screenshotData,
+          hasThumbnailData: !!a.thumbnailData,
+          metadata: a.metadata
+        }))
+      });
+
       let savedNote: Note;
       
       if (!tab.noteId) {
         savedNote = await NotesDB.createNote(
           tab.title,
           tab.content,
-          tab.attachments
+          attachmentsToSave
         );
       } else {
         savedNote = await NotesDB.updateNote(
@@ -629,19 +888,64 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           tab.title,
           tab.content,
           tab.version,
-          tab.attachments
+          attachmentsToSave
         );
       }
 
-      setTabs(prevTabs => prevTabs.map(t => 
-        t.id === tabId ? {
-          ...t,
-          noteId: savedNote.id,
-          version: savedNote.version,
-          attachments: savedNote.attachments,
-          syncStatus: 'synced' as const
-        } : t
-      ));
+      // Update the tab with both attachment references and full attachment data
+      setTabs(prevTabs => prevTabs.map(t => {
+        if (t.id === tabId) {
+          // Create a new tab object with updated properties
+          const updatedTab = {
+            ...t,
+            noteId: savedNote.id,
+            version: savedNote.version,
+            syncStatus: 'synced' as const
+          };
+          
+          // If we have attachment data, update both references and full data
+          if (savedNote.attachments && savedNote.attachments.length > 0) {
+            // Store both the attachment references and the full attachment data
+            updatedTab.attachments = savedNote.attachments;
+            updatedTab.loadedAttachments = attachmentsToSave;
+            
+            // Also update the cache with the full attachment data
+            setTimeout(async () => {
+              try {
+                const currentCache = await TabCacheManager.initCache();
+                if (currentCache) {
+                  // Use the TabCacheManager to update the cache with the full attachment data
+                  console.log(`Ensuring ${attachmentsToSave.length} attachments are cached for saved note ${savedNote.id}`);
+                  
+                  for (const attachment of attachmentsToSave) {
+                    // Add each attachment to the tab in the cache
+                    await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
+                    console.log(`Cached attachment ${attachment.id} for note ${savedNote.id}`);
+                  }
+                  
+                  // Verify all attachments were cached
+                  const verifiedAttachments = await TabCacheManager.loadAttachmentsForTab({
+                    ...updatedTab,
+                    id: tabId,
+                    attachments: savedNote.attachments || []
+                  });
+                  
+                  console.log(`Verification: ${verifiedAttachments.length} of ${savedNote.attachments?.length || 0} attachments are in cache for note ${savedNote.id}`);
+                }
+              } catch (error) {
+                console.error(`Failed to cache attachments for note ${savedNote.id}:`, error);
+              }
+            }, 0);
+          } else {
+            // No attachments, clear both references and full data
+            updatedTab.attachments = [];
+            updatedTab.loadedAttachments = [];
+          }
+          
+          return updatedTab;
+        }
+        return t;
+      }));
 
       console.log('Tab updated after save:', {
         tabId,
@@ -698,11 +1002,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 <span className={`sync-status ${activeTab.syncStatus}`}>
                   {activeTab.syncStatus}
                 </span>
+                {loadingAttachments && <span className="loading-attachments">Loading attachments...</span>}
               </div>
               <NoteInput
                 title={activeTab.title}
                 content={activeTab.content}
-                attachments={activeTab.attachments}
+                attachments={activeTab.loadedAttachments}
                 noteId={activeTab.noteId}
                 onTitleChange={(title) => handleTitleChange(activeTab.id, title)}
                 onContentChange={(content) => handleContentChange(activeTab.id, content)}

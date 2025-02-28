@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
+import { TabCacheManager } from '../lib/TabCacheManager';
 
 interface NoteInputProps {
   // Core note data only
@@ -24,6 +25,33 @@ const NoteInput: React.FC<NoteInputProps> = ({
   onAttachmentAdd,
   onAttachmentRemove
 }) => {
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  
+  // Handle lazy loading of attachments if needed
+  useEffect(() => {
+    const loadLazyAttachments = async () => {
+      if (!attachments || attachments.length === 0) return;
+      
+      // Check if any attachments need to be lazy loaded
+      const needsLazyLoading = attachments.some(
+        attachment => attachment.metadata?.isLazyLoaded && !attachment.screenshotData
+      );
+      
+      if (needsLazyLoading) {
+        setIsLoadingAttachments(true);
+        try {
+          // In a real implementation, this would load the full attachment data
+          // For now, we'll just simulate a delay
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } finally {
+          setIsLoadingAttachments(false);
+        }
+      }
+    };
+    
+    loadLazyAttachments();
+  }, [attachments]);
+
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onTitleChange(e.target.value);
   };
@@ -33,51 +61,58 @@ const NoteInput: React.FC<NoteInputProps> = ({
   };
 
   const formatFileSize = (size?: number): string => {
-    if (!size) return '';
+    if (!size) return '0 B';
+    
     const units = ['B', 'KB', 'MB', 'GB'];
-    let value = size;
+    let formattedSize = size;
     let unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
+    
+    while (formattedSize >= 1024 && unitIndex < units.length - 1) {
+      formattedSize /= 1024;
       unitIndex++;
     }
-    return `${Math.round(value * 10) / 10} ${units[unitIndex]}`;
+    
+    return `${formattedSize.toFixed(1)} ${units[unitIndex]}`;
   };
 
   const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString();
+    } catch (e) {
+      return dateStr;
+    }
   };
 
   return (
-    <div className="note-container">
+    <div className="note-input">
       <input
         type="text"
-        className="note-title-input"
-        placeholder="Note title (optional)"
+        placeholder="Title"
         value={title}
         onChange={handleTitleChange}
+        className="title-input"
       />
-      <textarea 
-        className="note-input"
-        placeholder="Start typing your note..."
+      <textarea
+        placeholder="Take a note..."
         value={content}
         onChange={handleContentChange}
+        className="content-input"
       />
+      
+      {isLoadingAttachments && (
+        <div className="attachments-loading">
+          Loading attachments...
+        </div>
+      )}
+      
       {attachments && attachments.length > 0 && (
-        <div className="attachments-section">
-          <div className="attachments-header">
-            <span className="attachments-title">
-              Attachments ({attachments.length})
-            </span>
-          </div>
-          <div className="attachments-grid">
-            {attachments.map((attachment) => (
+        <div className="attachments-container">
+          <h3>Attachments</h3>
+          <div className="attachments-list">
+            {attachments.map((attachment, index) => (
               <AttachmentOperation
-                key={attachment.id}
+                key={`${attachment.id}-${index}`}
                 attachment={attachment}
                 onRemove={onAttachmentRemove}
                 isPending={attachment.syncStatus === 'pending'}

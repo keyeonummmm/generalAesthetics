@@ -55,9 +55,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log('Background: Starting screenshot capture:', message.screenshotType);
         
         if (message.screenshotType === 'visible') {
+          // Use PNG format for better quality and to avoid JPEG artifacts
+          // Our image processor will handle the conversion and compression
           const captureData = await chrome.tabs.captureVisibleTab(
             chrome.windows.WINDOW_ID_CURRENT,
-            { format: 'jpeg', quality: 100 }
+            { format: 'png' }
           );
           console.log('Background: Visible capture successful');
           sendResponse({ success: true, screenshotData: captureData });
@@ -112,9 +114,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       try {
         console.log('Background: Capturing visible tab area');
+        // Use PNG format for better quality and to avoid JPEG artifacts
         const captureData = await chrome.tabs.captureVisibleTab(
           chrome.windows.WINDOW_ID_CURRENT,
-          { format: 'jpeg', quality: 100 }
+          { format: 'png' }
         );
         console.log('Background: Area capture successful');
         sendResponse({ success: true, captureData });

@@ -111,10 +111,31 @@ export class NotesDB {
   ): Promise<Note> {
     const db = await this.getDB();
     const timestamp = formatTimestamp();
-    const processedAttachments = attachments?.map(attachment => ({
-      ...attachment,
-      syncStatus: 'synced' as const
-    })) || [];
+    
+    // Process attachments to ensure they have all required fields
+    const processedAttachments = attachments?.map(attachment => {
+      // Ensure all required fields are present
+      const processedAttachment = {
+        ...attachment,
+        syncStatus: 'synced' as const,
+        // Ensure ID is present
+        id: attachment.id || Date.now(),
+        // Ensure createdAt is present
+        createdAt: attachment.createdAt || timestamp
+      };
+      
+      // Log attachment details for debugging
+      console.log('Processing attachment for save:', {
+        id: processedAttachment.id,
+        type: processedAttachment.type,
+        hasScreenshotData: !!processedAttachment.screenshotData,
+        hasThumbnailData: !!processedAttachment.thumbnailData,
+        hasMetadata: !!processedAttachment.metadata,
+        syncStatus: processedAttachment.syncStatus
+      });
+      
+      return processedAttachment;
+    }) || [];
 
     // Check if we have any content to save (title, content, or attachments)
     if (!title.trim() && !content.trim() && processedAttachments.length === 0) {
@@ -138,7 +159,10 @@ export class NotesDB {
       const request = store.add(newNote);
 
       request.onsuccess = () => {
-        console.log('Successfully created note with attachments:', newNote);
+        console.log('Successfully created note with attachments:', {
+          noteId: newNote.id,
+          attachmentCount: newNote.attachments?.length || 0
+        });
         resolve(newNote);
       };
       request.onerror = () => {
@@ -164,18 +188,39 @@ export class NotesDB {
       throw new Error('Version conflict - note was modified elsewhere');
     }
 
-    // For updates, keep attachment status as is until save completes
-    const processedAttachments = attachments?.map(attachment => ({
-      ...attachment,
-      // Only mark as synced if it's a new save operation
-      syncStatus: attachment.syncStatus === 'pending' ? 'synced' as const : attachment.syncStatus
-    })) || [];
+    const timestamp = formatTimestamp();
+    
+    // Process attachments to ensure they have all required fields
+    const processedAttachments = attachments?.map(attachment => {
+      // Ensure all required fields are present
+      const processedAttachment = {
+        ...attachment,
+        // Only mark as synced if it's a new save operation
+        syncStatus: attachment.syncStatus === 'pending' ? 'synced' as const : attachment.syncStatus,
+        // Ensure ID is present
+        id: attachment.id || Date.now(),
+        // Ensure createdAt is present
+        createdAt: attachment.createdAt || timestamp
+      };
+      
+      // Log attachment details for debugging
+      console.log('Processing attachment for update:', {
+        id: processedAttachment.id,
+        type: processedAttachment.type,
+        hasScreenshotData: !!processedAttachment.screenshotData,
+        hasThumbnailData: !!processedAttachment.thumbnailData,
+        hasMetadata: !!processedAttachment.metadata,
+        syncStatus: processedAttachment.syncStatus
+      });
+      
+      return processedAttachment;
+    }) || [];
 
     const updatedNote: Note = {
       ...existingNote,
       title: title.trim() || existingNote.title,
       content: content.trim(),
-      updatedAt: formatTimestamp(),
+      updatedAt: timestamp,
       version: existingNote.version + 1,
       attachments: processedAttachments,
       syncStatus: 'synced' as const
@@ -187,8 +232,17 @@ export class NotesDB {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(updatedNote);
 
-      request.onsuccess = () => resolve(updatedNote);
-      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        console.log('Successfully updated note with attachments:', {
+          noteId: updatedNote.id,
+          attachmentCount: updatedNote.attachments?.length || 0
+        });
+        resolve(updatedNote);
+      };
+      request.onerror = () => {
+        console.error('Failed to update note:', request.error);
+        reject(request.error);
+      };
     });
   }
   

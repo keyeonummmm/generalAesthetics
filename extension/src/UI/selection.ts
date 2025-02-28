@@ -156,7 +156,7 @@ export class ScreenshotSelection {
       console.log('Selection: Sending cropped image data');
       chrome.runtime.sendMessage({
         type: 'SELECTION_CAPTURE',
-        data: canvas.toDataURL()
+        data: canvas.toDataURL('image/png')
       });
 
     } catch (error) {

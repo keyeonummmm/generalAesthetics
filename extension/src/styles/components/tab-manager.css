@@ -70,4 +70,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   display: inline-block;
+}
+
+.loading-attachments {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: 0.8rem;
+  color: #666;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
 } 
