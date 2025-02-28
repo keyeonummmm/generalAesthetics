@@ -4,6 +4,7 @@ import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import '../styles/components/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
+import { TabCacheManager, Tab as CacheTab, TabCache } from '../lib/TabCacheManager';
 
 interface Tab {
   id: string;
@@ -74,56 +75,56 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   useEffect(() => {
     const loadCache = async () => {
       try {
-        // Use chrome.storage.local to get extension-wide cache
-        const result = await chrome.storage.local.get('tabCache');
-        const cache = result.tabCache;
-        if (cache) {
+        const cache = await TabCacheManager.initCache();
+        if (cache && cache.tabs.length > 0) {
           setTabs(cache.tabs);
           setActiveTabId(cache.activeTabId);
+        } else {
+          // Ensure there's always at least one tab
+          const initialTab: Tab = { 
+            id: `new-${uuidv4()}`, 
+            title: '', 
+            content: '', 
+            isNew: true, 
+            syncStatus: 'pending' as const,
+            lastEdited: new Date().toISOString()
+          };
+          setTabs([initialTab]);
+          setActiveTabId(initialTab.id);
         }
       } catch (error) {
         console.error('Failed to load tab cache:', error);
+        // Fallback to ensure there's always a tab
+        const initialTab: Tab = { 
+          id: `new-${uuidv4()}`, 
+          title: '', 
+          content: '', 
+          isNew: true, 
+          syncStatus: 'pending' as const,
+          lastEdited: new Date().toISOString()
+        };
+        setTabs([initialTab]);
+        setActiveTabId(initialTab.id);
       }
     };
     
-    // Listen for cache changes from other instances
-    const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
-      if (changes.tabCache) {
-        const newCache = changes.tabCache.newValue;
-        if (newCache) {
-          setTabs(newCache.tabs);
-          setActiveTabId(newCache.activeTabId);
-        }
-      }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChange);
     loadCache();
-
-    return () => {
-      chrome.storage.onChanged.removeListener(handleStorageChange);
-    };
   }, []);
 
   // Save cache when tabs or activeTabId changes
   useEffect(() => {
     const saveCache = async () => {
-      try {
-        await chrome.storage.local.set({
-          tabCache: {
-            tabs,
-            activeTabId,
-            lastUpdated: new Date().toISOString()
-          }
-        });
-      } catch (error) {
-        console.error('Failed to save tab cache:', error);
+      if (tabs.length && activeTabId) {
+        const cache: TabCache = {
+          tabs,
+          activeTabId,
+          lastUpdated: new Date().toISOString()
+        };
+        await TabCacheManager.saveCache(cache);
       }
     };
     
-    if (tabs.length && activeTabId) {
-      saveCache();
-    }
+    saveCache();
   }, [tabs, activeTabId]);
 
   // Add ref to track the last saved note ID
@@ -181,39 +182,70 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   const closeTab = async (tabId: string) => {
     console.log('Closing tab:', tabId);
     
-    setTabs(prevTabs => {
-      const newTabs = prevTabs.filter(tab => tab.id !== tabId);
+    // Get current cache
+    const currentCache = await TabCacheManager.initCache();
+    if (!currentCache) return;
+    
+    // Use TabCacheManager to remove the tab and clean up its attachments
+    const updatedCache = await TabCacheManager.removeTab(currentCache, tabId);
+    
+    // If no tabs remain, create a new empty tab
+    if (updatedCache.tabs.length === 0) {
+      const newTabId = `new-${uuidv4()}`;
+      console.log('Creating new empty tab:', newTabId);
+      const newTab: Tab = { 
+        id: newTabId, 
+        title: '', 
+        content: '', 
+        isNew: true,
+        syncStatus: 'pending' as const,
+        lastEdited: new Date().toISOString()
+      };
       
-      if (newTabs.length === 0) {
-        const newTabId = `new-${uuidv4()}`;
-        console.log('Creating new empty tab:', newTabId);
-        newTabs.push({ 
-          id: newTabId, 
-          title: '', 
-          content: '', 
-          isNew: true,
-          syncStatus: 'pending' as const,
-          lastEdited: new Date().toISOString()
-        });
-      }
-
-      // Cache will be automatically updated by the tabs state change
+      // Update the cache with the new tab
+      updatedCache.tabs = [newTab];
+      updatedCache.activeTabId = newTabId;
+      await TabCacheManager.saveCache(updatedCache);
+      
+      setTabs([newTab]);
+      setActiveTabId(newTabId);
+      onContentChange(
+        newTabId,
+        '',
+        '',
+        undefined,
+        undefined
+      );
+      
+      // Only clean up orphaned attachments, not all caches
+      await TabCacheManager.cleanupOrphanedAttachments();
+    } else if (updatedCache.tabs.length === 1 && updatedCache.tabs[0].id.startsWith('new-')) {
+      // If there's only one tab left and it's a new tab, clean up orphaned attachments
+      // but don't clear all caches to preserve the tab's state
+      console.log('Only one new tab remains, cleaning up orphaned attachments');
+      await TabCacheManager.cleanupOrphanedAttachments();
+      
+      setTabs(updatedCache.tabs);
+      setActiveTabId(updatedCache.activeTabId);
+    } else {
+      // Normal case - update tabs and active tab
+      setTabs(updatedCache.tabs);
       
       // Update active tab if needed
       if (activeTabId === tabId) {
-        console.log('Updating active tab to:', newTabs[0].id);
-        setActiveTabId(newTabs[0].id);
-        onContentChange(
-          newTabs[0].id,
-          newTabs[0].title,
-          newTabs[0].content,
-          newTabs[0].version,
-          newTabs[0].noteId
-        );
+        setActiveTabId(updatedCache.activeTabId);
+        const newActiveTab = updatedCache.tabs.find(t => t.id === updatedCache.activeTabId);
+        if (newActiveTab) {
+          onContentChange(
+            newActiveTab.id,
+            newActiveTab.title,
+            newActiveTab.content,
+            newActiveTab.version,
+            newActiveTab.noteId
+          );
+        }
       }
-      
-      return newTabs;
-    });
+    }
   };
 
   const addTab = (note?: Note) => {
@@ -297,46 +329,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const removeTabByNoteId = (noteId: string) => {
-    removeTabContent(noteId);
-    setTabs(prevTabs => {
-      const isActiveTab = prevTabs.some(tab => 
-        (tab.noteId === noteId || tab.id === noteId) && tab.id === activeTabId
-      );
-      
-      const newTabs = prevTabs.filter(tab => 
-        tab.noteId !== noteId && tab.id !== noteId
-      );
-      
-      if (newTabs.length === 0) {
-        const newTabId = `new-${uuidv4()}`;
-        const newTab: Tab = { 
-          id: newTabId, 
-          title: '', 
-          content: '', 
-          isNew: true,
-          syncStatus: 'pending' as const,
-          lastEdited: new Date().toISOString()
-        };
-        newTabs.push(newTab);
-        
-        if (isActiveTab) {
-          setActiveTabId(newTabId);
-          onContentChange(newTabId, '', '', undefined, undefined);
-        }
-      } else if (isActiveTab) {
-        setActiveTabId(newTabs[0].id);
-        const firstTab = newTabs[0];
-        onContentChange(
-          firstTab.id,
-          firstTab.title,
-          firstTab.content,
-          firstTab.version,
-          firstTab.noteId
-        );
-      }
-      
-      return newTabs;
-    });
+    const tabToRemove = tabs.find(tab => tab.noteId === noteId);
+    if (tabToRemove) {
+      closeTab(tabToRemove.id);
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -417,46 +413,26 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     },
     getActiveTab: () => {
       const activeTab = tabs.find(tab => tab.id === activeTabId);
-      return activeTab ? {
+      if (!activeTab) return null;
+      
+      return {
         id: activeTab.id,
         title: activeTab.title,
         content: activeTab.content,
         version: activeTab.version,
         noteId: activeTab.noteId,
         attachments: activeTab.attachments
-      } : null;
+      };
     },
-    updateTabContent: (tabId: string, title: string, content: string) => {
-      setTabs(prev => prev.map(tab => {
-        if (tab.id === tabId) {
-          return {
-            ...tab,
-            title,
-            content,
-            noteId: tab.noteId, // Preserve the noteId
-            syncStatus: 'pending' as const
-          };
-        }
-        return tab;
-      }));
-      
-      const tab = tabs.find(t => t.id === tabId);
-      if (onContentChange) {
-        onContentChange(
-          tabId, 
-          title, 
-          content, 
-          tab?.version,
-          tab?.noteId
-        );
-      }
-
-      setActiveTabId(tabId);
-    },
-    removeTabByNoteId: (noteId: string) => {
-      removeTabByNoteId(noteId);
+    updateTabContent: (id: string, title: string, content: string) => {
+      updateTabState(id, {
+        title,
+        content,
+        syncStatus: 'pending' as const
+      });
     },
     removeTabContent,
+    removeTabByNoteId,
     updateTabWithId: (tabId: string, note: Note) => {
       console.log('TabManager.updateTabWithId called:', {
         tabId,
@@ -500,8 +476,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     isNoteOpenInAnyTab: (noteId: string) => {
       return tabs.some(tab => tab.noteId === noteId || tab.id === noteId);
     },
-    addPendingAttachment: (tabId: string, attachment: Attachment) => {
-      addPendingAttachment(tabId, attachment);
+    addPendingAttachment: async (tabId: string, attachment: Attachment) => {
+      // Get current cache
+      const currentCache = await TabCacheManager.initCache();
+      if (!currentCache) return;
+      
+      // Use TabCacheManager to add the attachment
+      const updatedCache = await TabCacheManager.addAttachmentToTab(
+        currentCache,
+        tabId,
+        attachment
+      );
+      
+      setTabs(updatedCache.tabs);
     },
     handleSave: async (tabId: string, note: Note) => {
       await handleSave(tabId, note);
@@ -558,39 +545,60 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   // Handle attachment operations
   const handleAttachmentAdd = async (tabId: string, attachment: Attachment) => {
     const tab = tabs.find(t => t.id === tabId);
-    if (!tab?.noteId) return;
+    if (!tab) return;
 
     try {
-      const updatedNote = await NotesDB.addAttachment(
-        tab.noteId,
-        attachment.url || '', 
-        tab.title, 
-        attachment.screenshotData,
-        attachment.screenshotType);
-      updateTabState(tabId, {
-        attachments: updatedNote.attachments,
-        version: updatedNote.version,
-        syncStatus: 'synced' as const
-      });
+      // First, add the attachment to the tab cache
+      const currentCache = await TabCacheManager.initCache();
+      if (!currentCache) return;
+      
+      const updatedCache = await TabCacheManager.addAttachmentToTab(
+        currentCache,
+        tabId,
+        attachment
+      );
+      
+      // If the tab has a noteId, also update it in the database
+      if (tab.noteId) {
+        const updatedNote = await NotesDB.addAttachment(
+          tab.noteId,
+          attachment.url || '', 
+          tab.title, 
+          attachment.screenshotData,
+          attachment.screenshotType);
+          
+        updateTabState(tabId, {
+          attachments: updatedNote.attachments,
+          version: updatedNote.version,
+          syncStatus: 'synced' as const
+        });
+      } else {
+        // Just update the tab state with the new attachment
+        setTabs(updatedCache.tabs);
+      }
     } catch (error) {
       console.error('Failed to add attachment:', error);
     }
   };
 
   const handleAttachmentRemove = async (tabId: string, attachment: Attachment) => { 
-    setTabs(prevTabs => prevTabs.map(tab => {
-      if (tab.id === tabId) {
-        return {
-          ...tab,
-          attachments: tab.attachments?.filter(a => a.id !== attachment.id) || [],
-          syncStatus: 'pending' as const
-        };
-      }
-      return tab;
-    }));
+    if (!attachment.id) return;
+    
+    // Get current cache
+    const currentCache = await TabCacheManager.initCache();
+    if (!currentCache) return;
+    
+    // Use TabCacheManager to remove the attachment
+    const updatedCache = await TabCacheManager.removeAttachmentFromTab(
+      currentCache,
+      tabId,
+      attachment.id.toString()
+    );
+    
+    setTabs(updatedCache.tabs);
 
     // Update parent components about the change
-    const updatedTab = tabs.find(t => t.id === tabId);
+    const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
     if (updatedTab) {
       onContentChange(
         tabId,
@@ -600,19 +608,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         updatedTab.noteId
       );
     }
-  };
-
-  const addPendingAttachment = (tabId: string, attachment: Attachment) => {
-    setTabs(prevTabs => prevTabs.map(tab => {
-      if (tab.id === tabId) {
-        return {
-          ...tab,
-          attachments: [...(tab.attachments || []), attachment],
-          syncStatus: 'pending' as const
-        };
-      }
-      return tab;
-    }));
   };
 
   const handleSave = async (tabId: string, note: Note) => {
