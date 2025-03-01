@@ -394,6 +394,42 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     const tab = tabs.find(tab => tab.id === tabId);
     if (!tab) return;
     
+    // Check if the tab is completely clean (new tab with no content, title, noteId, or attachments)
+    const isCleanTab = tab.isNew && 
+                       !tab.noteId && 
+                       !tab.title.trim() && 
+                       !tab.content.trim() && 
+                       (!tab.attachments || tab.attachments.length === 0) &&
+                       tab.syncStatus === 'pending';
+    
+    if (isCleanTab) {
+      console.log('Tab is completely clean, closing without confirmation');
+      closeTab(tabId);
+      return;
+    }
+    
+    // For tabs with a noteId but no changes, also skip confirmation
+    if (tab.noteId && tab.syncStatus === 'synced') {
+      try {
+        const savedNote = await NotesDB.getNote(tab.noteId);
+        if (savedNote) {
+          // Compare titles and content to see if there are changes
+          const titleChanged = tab.title !== savedNote.title;
+          const contentChanged = tab.content !== savedNote.content;
+          
+          // If nothing has changed, close without confirmation
+          if (!titleChanged && !contentChanged) {
+            console.log('Tab has no changes compared to saved note, closing without confirmation');
+            closeTab(tabId);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for changes:', error);
+        // Continue with normal confirmation flow if we can't check
+      }
+    }
+    
     // Check if the tab has unsaved changes
     let hasUnsavedChanges = tab.syncStatus === 'pending';
     
@@ -599,13 +635,13 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
   };
 
-  const addTab = (note?: Note) => {
+  const addTab = (note?: Note, forceNew: boolean = false) => {
     console.log('Adding tab for note:', note ? {
       id: note.id,
       title: note.title,
       hasAttachments: note.attachments && note.attachments.length > 0,
       attachmentCount: note.attachments?.length || 0
-    } : 'new empty tab');
+    } : 'new empty tab', 'forceNew:', forceNew);
     
     // Check if this note is already open in a tab
     const existingTab = tabs.find(tab => 
@@ -630,63 +666,67 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       return;
     }
 
-    // Look for an empty tab that can be reused
-    const emptyTabIndex = tabs.findIndex(tab => 
-      tab.isNew && !tab.title && !tab.content && !tab.noteId
-    );
+    // Only look for empty tabs to reuse if forceNew is false
+    if (!forceNew) {
+      // Look for an empty tab that can be reused
+      const emptyTabIndex = tabs.findIndex(tab => 
+        tab.isNew && !tab.title && !tab.content && !tab.noteId && (!tab.attachments || tab.attachments.length === 0)
+      );
 
-    if (emptyTabIndex >= 0) {
-      // Reuse an empty tab
-      const updatedTabs = [...tabs];
-      const tabToUpdate = updatedTabs[emptyTabIndex];
-      console.log(`Reusing empty tab ${tabToUpdate.id} for note ${note?.id || 'new'}`);
-      
-      if (note) {
-        // Update the empty tab with the note's details
-        updatedTabs[emptyTabIndex] = {
-          ...tabToUpdate,
-          title: note.title,
-          content: note.content,
-          attachments: note.attachments,
-          isNew: false,
-          version: note.version,
-          noteId: note.id,
-          lastEdited: new Date().toISOString()
-        };
+      if (emptyTabIndex >= 0) {
+        // Reuse an empty tab
+        const updatedTabs = [...tabs];
+        const tabToUpdate = updatedTabs[emptyTabIndex];
+        console.log(`Reusing empty tab ${tabToUpdate.id} for note ${note?.id || 'new'}`);
+        
+        if (note) {
+          // Update the empty tab with the note's details
+          updatedTabs[emptyTabIndex] = {
+            ...tabToUpdate,
+            title: note.title,
+            content: note.content,
+            attachments: note.attachments,
+            isNew: false,
+            version: note.version,
+            noteId: note.id,
+            syncStatus: 'synced' as const, // Explicitly set to synced for notes from DB
+            lastEdited: new Date().toISOString()
+          };
+        }
+        
+        setTabs(updatedTabs);
+        setActiveTabId(tabToUpdate.id);
+        
+        // Explicitly load attachments for the tab if it has any
+        if (note && note.attachments && note.attachments.length > 0) {
+          console.log(`Note has ${note.attachments.length} attachments, scheduling load for tab ${tabToUpdate.id}`);
+          // Use setTimeout to ensure the tab state is updated before loading attachments
+          setTimeout(() => {
+            loadAttachmentsForTab(tabToUpdate.id);
+          }, 100); // Slightly longer timeout to ensure state is fully updated
+        }
+        
+        return;
       }
-      
-      setTabs(updatedTabs);
-      setActiveTabId(tabToUpdate.id);
-      
-      // Explicitly load attachments for the tab if it has any
-      if (note && note.attachments && note.attachments.length > 0) {
-        console.log(`Note has ${note.attachments.length} attachments, scheduling load for tab ${tabToUpdate.id}`);
-        // Use setTimeout to ensure the tab state is updated before loading attachments
-        setTimeout(() => {
-          loadAttachmentsForTab(tabToUpdate.id);
-        }, 100); // Slightly longer timeout to ensure state is fully updated
-      }
-      
-      return;
     }
 
     // Create a new tab
-    const newTabId = `tab-${Date.now()}`;
+    const newTabId = note ? `tab-${note.id}` : `new-${uuidv4()}`;
     console.log(`Creating new tab ${newTabId} for note ${note?.id || 'new'}`);
     
     const newTab: Tab = {
       id: newTabId,
       title: note ? note.title : '',
       content: note ? note.content : '',
-      attachments: note ? note.attachments : [],
+      attachments: note ? note.attachments : undefined,
       isNew: !note,
       version: note ? note.version : undefined,
       noteId: note ? note.id : undefined,
-      syncStatus: 'synced',
+      syncStatus: note ? 'synced' : 'pending',
       lastEdited: new Date().toISOString()
     };
 
-    setTabs([...tabs, newTab]);
+    setTabs(prevTabs => [...prevTabs, newTab]);
     setActiveTabId(newTabId);
     
     // Explicitly load attachments for the new tab if it has any
@@ -772,60 +812,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
-      // First check if note is already open
-      const existingTab = tabs.find(tab => 
-        tab.id === note.id || tab.noteId === note.id
-      );
-      
-      if (existingTab) {
-        setActiveTabId(existingTab.id);
-        return;
-      }
-
-      // Look for an empty tab to reuse
-      const emptyTab = tabs.find(tab => 
-        tab.isNew && 
-        !tab.title && 
-        !tab.content && 
-        !tab.noteId
-      );
-
-      if (emptyTab) {
-        // Reuse the empty tab
-        setTabs(prevTabs => prevTabs.map(tab =>
-          tab.id === emptyTab.id ? {
-            ...tab,
-            title: note.title,
-            content: note.content,
-            attachments: note.attachments,
-            isNew: false,
-            version: note.version,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            syncStatus: 'synced' as const,
-            noteId: note.id
-          } : tab
-        ));
-        setActiveTabId(emptyTab.id);
-      } else {
-        // Create new tab if no empty tab available
-        const tabId = note.id === 'new' ? `new-${uuidv4()}` : note.id;
-        const newTab: Tab = {
-          id: tabId,
-          title: note.title,
-          content: note.content,
-          attachments: note.attachments,
-          isNew: note.id === 'new',
-          version: note.version,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          syncStatus: 'synced' as const,
-          noteId: note.id,
-          lastEdited: new Date().toISOString()
-        };
-        setTabs(prevTabs => [...prevTabs, newTab]);
-        setActiveTabId(tabId);
-      }
+      // Use the component-level addTab function for consistency
+      // We don't force new tabs when opening notes, so forceNew=false
+      addTab(note, false);
     },
     updateTab: (savedNote: Note) => {
       setTabs(prevTabs => prevTabs.map(tab =>
@@ -1241,15 +1230,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   // Add a function to sort tabs with pinned tabs first
   const sortTabs = (tabs: Tab[]): Tab[] => {
-    return [...tabs].sort((a, b) => {
-      // First sort by pinned status (pinned tabs first)
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      
-      // If both are pinned or both are not pinned, sort by creation time
-      // Use lastEdited as a proxy for creation time
-      return new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime();
-    });
+    // Return tabs in their original order (creation order)
+    // We no longer sort by pinned status, we just use CSS to highlight pinned tabs
+    return [...tabs];
   };
 
   // Add a method to synchronize the cache
@@ -1307,7 +1290,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   return (
     <div className="tab-manager">
       <div className="tab-list">
-        {sortTabs(tabs).map(tab => (
+        {tabs.map(tab => (
           <div 
             key={tab.id}
             className={`tab ${activeTabId === tab.id ? 'active' : ''} ${tab.pinned ? 'pinned' : ''}`}
@@ -1344,7 +1327,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         ))}
         <button 
           className="new-tab-button"
-          onClick={() => addTab()}
+          onClick={() => addTab(undefined, true)}
           title="New Tab"
         >
           +

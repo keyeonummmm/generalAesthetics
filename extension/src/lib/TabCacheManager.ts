@@ -514,7 +514,7 @@ export class TabCacheManager {
     if (tabIndex >= 0) {
       // First, unpin any previously pinned tabs
       updatedTabs.forEach((tab, index) => {
-        if (tab.pinned && tab.id !== tabId) {
+        if (tab.pinned) {
           updatedTabs[index] = {
             ...tab,
             pinned: false

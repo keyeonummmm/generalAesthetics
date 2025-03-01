@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
 import { TabCacheManager } from '../lib/TabCacheManager';
+import '../styles/components/note-input.css';
 
 interface NoteInputProps {
   // Core note data only
@@ -26,6 +27,8 @@ const NoteInput: React.FC<NoteInputProps> = ({
   onAttachmentRemove
 }) => {
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   
   // Handle lazy loading of attachments if needed
   useEffect(() => {
@@ -52,12 +55,26 @@ const NoteInput: React.FC<NoteInputProps> = ({
     loadLazyAttachments();
   }, [attachments]);
 
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onTitleChange(e.target.value);
+  // Update the contenteditable divs when props change
+  useEffect(() => {
+    if (titleRef.current && titleRef.current.textContent !== title) {
+      titleRef.current.textContent = title;
+    }
+    if (contentRef.current && contentRef.current.textContent !== content) {
+      contentRef.current.textContent = content;
+    }
+  }, [title, content]);
+
+  const handleTitleInput = () => {
+    if (titleRef.current) {
+      onTitleChange(titleRef.current.textContent || '');
+    }
   };
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onContentChange(e.target.value);
+  const handleContentInput = () => {
+    if (contentRef.current) {
+      onContentChange(contentRef.current.textContent || '');
+    }
   };
 
   const formatFileSize = (size?: number): string => {
@@ -86,20 +103,23 @@ const NoteInput: React.FC<NoteInputProps> = ({
 
   return (
     <div className="note-input">
-      <input
-        type="text"
-        placeholder="Title"
-        value={title}
-        onChange={handleTitleChange}
-        className="title-input"
-      />
-      <textarea
-        placeholder="Take a note..."
-        value={content}
-        onChange={handleContentChange}
-        className="content-input"
-        style={{ resize: 'none' }}
-      />
+      <div 
+        ref={titleRef}
+        className="title-input-seamless"
+        contentEditable
+        onInput={handleTitleInput}
+        data-placeholder="Title"
+        suppressContentEditableWarning
+      ></div>
+      
+      <div 
+        ref={contentRef}
+        className="content-input-seamless"
+        contentEditable
+        onInput={handleContentInput}
+        data-placeholder="Start typing your note here..."
+        suppressContentEditableWarning
+      ></div>
       
       {isLoadingAttachments && (
         <div className="attachments-loading">
