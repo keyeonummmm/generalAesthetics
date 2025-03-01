@@ -54,6 +54,59 @@ interface TabManagerCache {
 
 const CACHE_KEY = 'tabManager_cache';
 
+// Add ConfirmationDialog component
+interface ConfirmationDialogProps {
+  isOpen: boolean;
+  tabId: string;
+  tabTitle: string;
+  onConfirm: (tabId: string) => void;
+  onCancel: (tabId: string) => void;
+  onClose: () => void;
+}
+
+const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
+  isOpen,
+  tabId,
+  tabTitle,
+  onConfirm,
+  onCancel,
+  onClose
+}) => {
+  if (!isOpen) return null;
+
+  // Use a more specific title based on tab title
+  const displayTitle = tabTitle.trim() ? tabTitle : 'Untitled Note';
+
+  return (
+    <div className="confirmation-dialog-backdrop">
+      <div className="confirmation-dialog">
+        <div className="confirmation-dialog-header">
+          <h3>Unsaved Changes</h3>
+          <button className="close-dialog" onClick={onClose}>×</button>
+        </div>
+        <div className="confirmation-dialog-content">
+          <p>You have unsaved changes in "{displayTitle}".</p>
+          <p>Would you like to save before closing?</p>
+        </div>
+        <div className="confirmation-dialog-actions">
+          <button 
+            className="dialog-btn cancel-btn" 
+            onClick={() => onCancel(tabId)}
+          >
+            Close Without Saving
+          </button>
+          <button 
+            className="dialog-btn confirm-btn" 
+            onClick={() => onConfirm(tabId)}
+          >
+            Save & Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   onChangeStatus,
   onContentChange,
@@ -72,6 +125,17 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+  
+  // Add state for confirmation dialog
+  const [confirmationState, setConfirmationState] = useState<{
+    isOpen: boolean;
+    tabId: string;
+    hasUnsavedChanges: boolean;
+  }>({
+    isOpen: false,
+    tabId: '',
+    hasUnsavedChanges: false
+  });
 
   // Load cache on mount
   useEffect(() => {
@@ -295,6 +359,148 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         savedNote.id
       );
     }
+  };
+
+  const confirmCloseTab = async (tabId: string) => {
+    console.log('Confirming tab close:', tabId);
+    
+    const tab = tabs.find(tab => tab.id === tabId);
+    if (!tab) return;
+    
+    // Check if the tab has unsaved changes
+    let hasUnsavedChanges = tab.syncStatus === 'pending';
+    
+    // If the tab has a noteId, also check if content has changed compared to the saved note
+    if (tab.noteId && !hasUnsavedChanges) {
+      try {
+        const savedNote = await NotesDB.getNote(tab.noteId);
+        if (savedNote) {
+          // Compare titles and content to see if there are changes
+          const titleChanged = tab.title !== savedNote.title;
+          const contentChanged = tab.content !== savedNote.content;
+          
+          // If either has changed, there are unsaved changes
+          hasUnsavedChanges = titleChanged || contentChanged;
+          
+          if (hasUnsavedChanges) {
+            console.log('Detected unsaved changes compared to saved note:', {
+              titleChanged,
+              contentChanged
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for unsaved changes:', error);
+        // If we can't check, assume there are changes
+        hasUnsavedChanges = true;
+      }
+    }
+    
+    if (hasUnsavedChanges) {
+      console.log('Tab has unsaved changes, showing confirmation dialog');
+      // Show confirmation dialog
+      setConfirmationState({
+        isOpen: true,
+        tabId,
+        hasUnsavedChanges
+      });
+    } else {
+      console.log('No unsaved changes detected, closing tab immediately');
+      // No unsaved changes, close immediately
+      closeTab(tabId);
+    }
+  };
+  
+  const handleSaveAndClose = async (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    
+    try {
+      // Check if we have attachments to save
+      let attachmentsToSave: Attachment[] = [];
+      
+      if (tab.attachments && tab.attachments.length > 0) {
+        if (tab.loadedAttachments && tab.loadedAttachments.length === tab.attachments.length) {
+          // Use already loaded attachments
+          attachmentsToSave = tab.loadedAttachments;
+        } else {
+          // Load attachments from cache
+          console.log('Loading attachments for save operation');
+          attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
+        }
+      }
+      
+      console.log('Saving note before closing tab:', {
+        tabId,
+        title: tab.title,
+        hasAttachments: attachmentsToSave.length > 0,
+        attachmentCount: attachmentsToSave.length
+      });
+      
+      let savedNote: Note;
+      
+      if (!tab.noteId) {
+        // Create a new note
+        savedNote = await NotesDB.createNote(
+          tab.title,
+          tab.content,
+          attachmentsToSave
+        );
+        console.log('Created new note before closing tab:', savedNote.id);
+      } else {
+        // Update existing note
+        savedNote = await NotesDB.updateNote(
+          tab.noteId,
+          tab.title,
+          tab.content,
+          tab.version,
+          attachmentsToSave
+        );
+        console.log('Updated note before closing tab:', savedNote.id);
+      }
+      
+      // Update the tab with saved note data to mark it as synced
+      setTabs(prevTabs => prevTabs.map(t => {
+        if (t.id === tabId) {
+          return {
+            ...t,
+            noteId: savedNote.id,
+            version: savedNote.version,
+            syncStatus: 'synced' as const
+          };
+        }
+        return t;
+      }));
+      
+      // Close the tab after saving
+      console.log('Note saved successfully, now closing tab:', tabId);
+      closeTab(tabId);
+    } catch (error) {
+      console.error('Failed to save note before closing tab:', error);
+      // Ask if they want to close without saving
+      if (confirm('Failed to save note. Close tab without saving?')) {
+        closeTab(tabId);
+      }
+    } finally {
+      // Reset confirmation state
+      setConfirmationState({
+        isOpen: false,
+        tabId: '',
+        hasUnsavedChanges: false
+      });
+    }
+  };
+  
+  const handleCloseWithoutSaving = (tabId: string) => {
+    console.log('Closing tab without saving:', tabId);
+    closeTab(tabId);
+    
+    // Reset confirmation state
+    setConfirmationState({
+      isOpen: false,
+      tabId: '',
+      hasUnsavedChanges: false
+    });
   };
 
   const closeTab = async (tabId: string) => {
@@ -975,7 +1181,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               className="close-tab"
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(tab.id);
+                confirmCloseTab(tab.id);
               }}
             >
               ×
@@ -1018,6 +1224,16 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           );
         })()}
       </div>
+      
+      {/* Add Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={confirmationState.isOpen}
+        tabId={confirmationState.tabId}
+        tabTitle={tabs.find(tab => tab.id === confirmationState.tabId)?.title || ''}
+        onConfirm={handleSaveAndClose}
+        onCancel={handleCloseWithoutSaving}
+        onClose={() => setConfirmationState({ isOpen: false, tabId: '', hasUnsavedChanges: false })}
+      />
     </div>
   );
 });
