@@ -30,7 +30,7 @@ interface TabManagerProps {
 export interface TabManagerRef {
   addTab: (note: Note) => void;
   updateTab: (note: Note) => void;
-  removeTabByNoteId: (noteId: string) => void;
+  removeTabByNoteId: (noteId: string) => Promise<void>;
   getActiveTab: () => {
     id: string;
     title: string;
@@ -40,7 +40,7 @@ export interface TabManagerRef {
     attachments?: Attachment[];
   } | null;
   updateTabContent: (id: string, title: string, content: string) => void;
-  removeTabContent: (noteId: string) => void;
+  removeTabContent: (noteId: string) => Promise<void>;
   updateTabWithId: (tabId: string, note: Note) => void;
   isNoteOpenInAnyTab: (noteId: string) => boolean;
   addPendingAttachment: (tabId: string, attachment: Attachment) => void;
@@ -569,9 +569,34 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   const closeTab = async (tabId: string) => {
     console.log('Closing tab:', tabId);
     
+    // Get the tab before we remove it
+    const tabToClose = tabs.find(tab => tab.id === tabId);
+    if (!tabToClose) {
+      console.warn(`Tab ${tabId} not found for closing`);
+      return;
+    }
+    
     // Get current cache
     const currentCache = await TabCacheManager.initCache();
     if (!currentCache) return;
+    
+    // If the tab has a noteId, we need to handle it specially
+    // We want to remove the tab but not delete the note's attachments from storage
+    // since they might be needed by other tabs or in the future
+    if (tabToClose.noteId) {
+      console.log(`Tab ${tabId} is associated with note ${tabToClose.noteId}`);
+      
+      // Check if this note is open in any other tabs
+      const otherTabsWithSameNote = tabs.filter(
+        tab => tab.noteId === tabToClose.noteId && tab.id !== tabId
+      );
+      
+      if (otherTabsWithSameNote.length > 0) {
+        console.log(`Note ${tabToClose.noteId} is open in ${otherTabsWithSameNote.length} other tabs, preserving attachments`);
+      } else {
+        console.log(`Note ${tabToClose.noteId} is not open in any other tabs`);
+      }
+    }
     
     // Use TabCacheManager to remove the tab and clean up its attachments
     const updatedCache = await TabCacheManager.removeTab(currentCache, tabId);
@@ -586,7 +611,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         content: '', 
         isNew: true,
         syncStatus: 'pending' as const,
-        lastEdited: new Date().toISOString()
+        lastEdited: new Date().toISOString(),
+        pinned: false // Explicitly set to false to ensure new tabs are never pinned
       };
       
       // Update the cache with the new tab
@@ -690,7 +716,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             version: note.version,
             noteId: note.id,
             syncStatus: 'synced' as const, // Explicitly set to synced for notes from DB
-            lastEdited: new Date().toISOString()
+            lastEdited: new Date().toISOString(),
+            pinned: false // Ensure the tab is not pinned by default
           };
         }
         
@@ -723,7 +750,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       version: note ? note.version : undefined,
       noteId: note ? note.id : undefined,
       syncStatus: note ? 'synced' : 'pending',
-      lastEdited: new Date().toISOString()
+      lastEdited: new Date().toISOString(),
+      pinned: false // Ensure new tabs are never pinned by default
     };
 
     setTabs(prevTabs => [...prevTabs, newTab]);
@@ -756,58 +784,105 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }));
   };
 
-  const removeTabContent = (noteId: string) => {
+  const removeTabContent = async (noteId: string) => {
     console.log('removeTabContent called for noteId:', noteId);
     
-    setTabs(prevTabs => {
-      return prevTabs.map(tab => {
-        if (tab.noteId === noteId || tab.id === noteId) {
-          if (tab.id === activeTabId) {
-            // For active tab: Clear content but keep the tab
-            console.log('Cleaning content for active tab:', tab.id);
+    // First, clean up all attachments for this note ID
+    if (noteId) {
+      console.log(`Cleaning up attachments for note ${noteId}`);
+      await TabCacheManager.cleanupAttachmentsForNote(noteId);
+    }
+    
+    // Find all tabs associated with this noteId
+    const tabsToUpdate = tabs.filter(tab => tab.noteId === noteId || tab.id === noteId);
+    
+    if (tabsToUpdate.length === 0) {
+      console.log(`No tabs found for note ${noteId}`);
+      return;
+    }
+    
+    console.log(`Found ${tabsToUpdate.length} tabs associated with note ${noteId}`);
+    
+    // Process each tab
+    for (const tab of tabsToUpdate) {
+      if (tab.id === activeTabId) {
+        // For active tab: Clear content but keep the tab
+        console.log('Cleaning content for active tab:', tab.id);
+        
+        // Check if the tab was pinned before
+        const wasPinned = tab.pinned;
+        if (wasPinned) {
+          console.log(`Unpinning tab ${tab.id} as it's being reset`);
+        }
+        
+        // Update the tab state to clear content and references
+        setTabs(prevTabs => prevTabs.map(t => {
+          if (t.id === tab.id) {
             return {
-              ...tab,
-              id: tab.id, // Keep existing tab ID
+              ...t,
               title: '',
               content: '',
               noteId: undefined, // Clear the noteId
               version: undefined,
-              attachments: undefined,
+              attachments: undefined, // Clear attachment references
+              loadedAttachments: undefined, // Clear loaded attachments
               isNew: true,
               syncStatus: 'pending' as const,
+              lastEdited: new Date().toISOString(),
+              pinned: false // Always reset pinned status
             };
-          } else {
-            // For inactive tabs: Remove them in a separate operation
-            console.log('Marking inactive tab for removal:', tab.id);
-            // Use setTimeout to avoid recursive loop
-            setTimeout(() => {
-              setTabs(current => current.filter(t => t.id !== tab.id));
-            }, 0);
-            return tab;
           }
-        }
-        return tab;
-      });
-    });
-
-    // Notify parent of changes if it's the active tab
-    const activeTab = tabs.find(tab => tab.id === activeTabId);
-    if (activeTab && (activeTab.noteId === noteId || activeTab.id === noteId)) {
-      onContentChange(
-        activeTabId,
-        '',
-        '',
-        undefined,
-        undefined
-      );
+          return t;
+        }));
+        
+        // Notify parent of changes
+        onContentChange(
+          activeTabId,
+          '',
+          '',
+          undefined,
+          undefined
+        );
+      } else {
+        // For inactive tabs: Remove them completely
+        console.log('Removing inactive tab:', tab.id);
+        
+        // Use closeTab which properly cleans up the tab
+        await closeTab(tab.id);
+      }
     }
+    
+    // Clean up any orphaned attachments
+    await TabCacheManager.cleanupOrphanedAttachments();
   };
 
-  const removeTabByNoteId = (noteId: string) => {
-    const tabToRemove = tabs.find(tab => tab.noteId === noteId);
-    if (tabToRemove) {
-      closeTab(tabToRemove.id);
+  const removeTabByNoteId = async (noteId: string) => {
+    console.log('removeTabByNoteId called for noteId:', noteId);
+    
+    // First, clean up all attachments for this note ID
+    if (noteId) {
+      console.log(`Cleaning up attachments for note ${noteId}`);
+      await TabCacheManager.cleanupAttachmentsForNote(noteId);
     }
+    
+    // Find all tabs associated with this noteId
+    const tabsToRemove = tabs.filter(tab => tab.noteId === noteId);
+    
+    if (tabsToRemove.length === 0) {
+      console.log(`No tabs found for note ${noteId}`);
+      return;
+    }
+    
+    console.log(`Found ${tabsToRemove.length} tabs associated with note ${noteId}`);
+    
+    // Process each tab
+    for (const tab of tabsToRemove) {
+      console.log(`Removing tab ${tab.id} for deleted note ${noteId}`);
+      await closeTab(tab.id);
+    }
+    
+    // Clean up any orphaned attachments
+    await TabCacheManager.cleanupOrphanedAttachments();
   };
 
   useImperativeHandle(ref, () => ({
@@ -855,8 +930,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         syncStatus: 'pending' as const
       });
     },
-    removeTabContent,
-    removeTabByNoteId,
+    removeTabContent: async (noteId: string) => {
+      await removeTabContent(noteId);
+    },
+    removeTabByNoteId: async (noteId: string) => {
+      await removeTabByNoteId(noteId);
+    },
     updateTabWithId: (tabId: string, note: Note) => {
       console.log('TabManager.updateTabWithId called:', {
         tabId,

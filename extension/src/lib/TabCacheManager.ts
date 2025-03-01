@@ -177,12 +177,34 @@ export class TabCacheManager {
   public static async removeTab(cache: TabCache, tabId: string): Promise<TabCache> {
     // Find the tab to be removed
     const tabToRemove = cache.tabs.find(tab => tab.id === tabId);
+    if (!tabToRemove) {
+      console.warn(`Tab ${tabId} not found in cache for removal`);
+      return cache;
+    }
+    
+    console.log(`Removing tab ${tabId} from cache`, {
+      hasNoteId: !!tabToRemove.noteId,
+      attachmentCount: tabToRemove.attachments?.length || 0
+    });
     
     // Clean up attachments if they exist
     if (tabToRemove?.attachments && tabToRemove.attachments.length > 0) {
-      // Only clean up attachments for unsaved notes
-      // If the tab has a noteId, it's a saved note and we should keep the attachments
-      if (!tabToRemove.noteId) {
+      // Check if this is a saved note and if any other tabs reference this note
+      const isSharedNote = tabToRemove.noteId && cache.tabs.some(
+        tab => tab.id !== tabId && tab.noteId === tabToRemove.noteId
+      );
+      
+      if (isSharedNote) {
+        // If this is a saved note and other tabs reference it, preserve the attachments
+        console.log(`Preserving attachments for note ${tabToRemove.noteId} as it's referenced by other tabs`);
+      } else if (tabToRemove.noteId) {
+        // If this is a saved note but no other tabs reference it, we still preserve attachments
+        // as they might be needed when the note is opened again
+        console.log(`Preserving attachments for saved note ${tabToRemove.noteId}`);
+      } else {
+        // If this is an unsaved note, clean up its attachments
+        console.log(`Cleaning up attachments for unsaved tab ${tabId}`);
+        
         // Convert attachment references to format expected by cleanupAttachments
         const attachmentsToCleanup = tabToRemove.attachments.map(ref => ({
           id: ref.id,
@@ -192,20 +214,11 @@ export class TabCacheManager {
         } as Attachment));
         
         await this.cleanupAttachments(attachmentsToCleanup);
-        console.log(`Cleaned up attachments for unsaved tab ${tabId}`);
-      } else {
-        console.log(`Preserving attachments for saved note ${tabToRemove.noteId} when closing tab ${tabId}`);
       }
     }
     
     // Remove the tab from the cache
     const updatedTabs = cache.tabs.filter(tab => tab.id !== tabId);
-    
-    // If no tabs remain, create a new empty tab
-    if (updatedTabs.length === 0) {
-      // This logic should match your application's requirements for creating a new tab
-      // You might want to move this logic elsewhere depending on your architecture
-    }
     
     // Update the active tab if necessary
     let activeTabId = cache.activeTabId;
@@ -648,6 +661,81 @@ export class TabCacheManager {
     } catch (error) {
       console.error('Failed to synchronize tab cache:', error);
       return null;
+    }
+  }
+
+  /**
+   * Clean up all attachments for a specific note ID
+   * This is used when a note is deleted from the database
+   */
+  public static async cleanupAttachmentsForNote(noteId: string): Promise<void> {
+    try {
+      console.log(`Cleaning up attachments for deleted note ${noteId}...`);
+      
+      // Get the current cache
+      const cache = await this.initCache();
+      if (!cache) {
+        console.warn('No cache found when cleaning up attachments for note');
+        return;
+      }
+      
+      // Find all tabs that reference this note
+      const tabsWithNote = cache.tabs.filter(tab => tab.noteId === noteId);
+      console.log(`Found ${tabsWithNote.length} tabs referencing note ${noteId}`);
+      
+      // Collect all attachment IDs from these tabs
+      const attachmentIds: number[] = [];
+      for (const tab of tabsWithNote) {
+        if (tab.attachments) {
+          for (const attachment of tab.attachments) {
+            if (attachment.id && !attachmentIds.includes(attachment.id)) {
+              attachmentIds.push(attachment.id);
+            }
+          }
+        }
+      }
+      
+      console.log(`Found ${attachmentIds.length} attachments to clean up for note ${noteId}`);
+      
+      // Remove each attachment from storage
+      for (const attachmentId of attachmentIds) {
+        const key = `${this.ATTACHMENT_PREFIX}${attachmentId}`;
+        await chrome.storage.local.remove(key);
+        console.log(`Removed attachment ${attachmentId} from storage for deleted note ${noteId}`);
+      }
+      
+      // Update the tabs to remove references to the deleted note
+      const updatedTabs = cache.tabs.map(tab => {
+        if (tab.noteId === noteId) {
+          // Check if the tab was pinned before
+          const wasPinned = tab.pinned;
+          if (wasPinned) {
+            console.log(`Unpinning tab ${tab.id} as it's being reset due to note deletion`);
+          }
+          
+          // Clear the noteId and attachments from the tab, and reset pinned status
+          return {
+            ...tab,
+            noteId: undefined,
+            attachments: undefined,
+            syncStatus: 'pending' as const,
+            pinned: false // Always reset pinned status
+          };
+        }
+        return tab;
+      });
+      
+      // Save the updated cache
+      const updatedCache = {
+        ...cache,
+        tabs: updatedTabs,
+        lastUpdated: new Date().toISOString()
+      };
+      await this.saveCache(updatedCache);
+      
+      console.log(`Successfully cleaned up attachments for deleted note ${noteId}`);
+    } catch (error) {
+      console.error(`Failed to clean up attachments for note ${noteId}:`, error);
     }
   }
 } 
