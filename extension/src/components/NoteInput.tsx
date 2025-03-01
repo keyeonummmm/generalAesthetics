@@ -98,6 +98,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
         value={content}
         onChange={handleContentChange}
         className="content-input"
+        style={{ resize: 'none' }}
       />
       
       {isLoadingAttachments && (

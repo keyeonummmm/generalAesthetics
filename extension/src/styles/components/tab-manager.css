@@ -30,6 +30,42 @@
   color: var(--hover-text);
 }
 
+.tab.pinned {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-bottom: 2px solid #4285f4;
+}
+
+.tab.pinned.active {
+  background: var(--hover-bg);
+  color: var(--hover-text);
+  border-bottom: 2px solid #4285f4;
+}
+
+.pin-indicator {
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.tab-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.pin-tab {
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.pin-tab:hover {
+  color: #000;
+}
+
 .close-tab {
   padding: 2px 6px;
   background: transparent;
@@ -38,7 +74,7 @@
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  margin-left: 8px;
+  margin-left: 4px;
 }
 
 .close-tab:hover {

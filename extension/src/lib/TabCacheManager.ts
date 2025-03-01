@@ -13,6 +13,7 @@ export interface Tab {
   syncStatus: 'pending' | 'synced';
   noteId?: string;
   lastEdited: string;
+  pinned?: boolean;
 }
 
 export interface AttachmentReference {
@@ -358,7 +359,7 @@ export class TabCacheManager {
 
   /**
    * Clear all tab and attachment caches
-   * Only cleans up orphaned attachments and preserves active tab attachments
+   * Only cleans up orphaned attachments and preserves active tab attachments and pinned tabs
    */
   public static async clearAllCaches(): Promise<void> {
     try {
@@ -366,27 +367,47 @@ export class TabCacheManager {
       const cache = await this.initCache();
       
       if (cache) {
-        // Only clean up attachments for tabs that are being removed
-        // We want to preserve attachments for the active tab
+        // Get pinned tab and active tab
+        const pinnedTabs = this.getPinnedTabs(cache);
+        const pinnedTab = pinnedTabs.length > 0 ? pinnedTabs[0] : null; // Should be at most one
         const activeTab = cache.tabs.find(tab => tab.id === cache.activeTabId);
         
-        // Clean up orphaned attachments but preserve active tab attachments
+        // Clean up orphaned attachments but preserve active tab and pinned tab attachments
         await this.cleanupOrphanedAttachments();
         
-        // Don't remove the tab cache completely, just update it to keep the active tab
-        if (activeTab) {
+        // Don't remove the tab cache completely, just update it to keep the active tab and pinned tab
+        const tabsToKeep = [];
+        
+        // Add pinned tab if it exists
+        if (pinnedTab) {
+          tabsToKeep.push(pinnedTab);
+        }
+        
+        // Add active tab if it's not already included (as the pinned tab)
+        if (activeTab && (!pinnedTab || activeTab.id !== pinnedTab.id)) {
+          tabsToKeep.push(activeTab);
+        }
+        
+        if (tabsToKeep.length > 0) {
+          // Determine which tab should be active
+          // Prioritize the pinned tab
+          let newActiveTabId = cache.activeTabId;
+          if (pinnedTab) {
+            newActiveTabId = pinnedTab.id;
+          }
+          
           const updatedCache: TabCache = {
-            tabs: [activeTab],
-            activeTabId: activeTab.id,
+            tabs: tabsToKeep,
+            activeTabId: newActiveTabId,
             lastUpdated: new Date().toISOString()
           };
           await this.saveCache(updatedCache);
+          console.log('Cache cleared successfully while preserving pinned tab and active tab data');
         } else {
-          // If no active tab, clear the cache
+          // If no tabs to keep, clear the cache
           await chrome.storage.local.remove(this.CACHE_KEY);
+          console.log('No tabs to preserve, cache cleared completely');
         }
-        
-        console.log('Cache cleared successfully while preserving active tab data');
       }
     } catch (error) {
       console.error('Failed to clear caches:', error);
@@ -478,6 +499,155 @@ export class TabCacheManager {
       
     } catch (error) {
       console.error('Failed to clean up orphaned attachments:', error);
+    }
+  }
+
+  /**
+   * Pin a tab in the cache
+   * Pinned tabs will be shown first in the tab list and will be prioritized when opening the extension
+   * Only one tab can be pinned at a time
+   */
+  public static async pinTab(cache: TabCache, tabId: string): Promise<TabCache> {
+    const updatedTabs = [...cache.tabs];
+    const tabIndex = updatedTabs.findIndex(tab => tab.id === tabId);
+    
+    if (tabIndex >= 0) {
+      // First, unpin any previously pinned tabs
+      updatedTabs.forEach((tab, index) => {
+        if (tab.pinned && tab.id !== tabId) {
+          updatedTabs[index] = {
+            ...tab,
+            pinned: false
+          };
+        }
+      });
+      
+      // Set the pinned property to true for the selected tab
+      updatedTabs[tabIndex] = {
+        ...updatedTabs[tabIndex],
+        pinned: true
+      };
+      
+      // Set this tab as the active tab
+      const updatedCache = {
+        ...cache,
+        tabs: updatedTabs,
+        activeTabId: tabId,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await this.saveCache(updatedCache);
+      return updatedCache;
+    }
+    
+    return cache;
+  }
+
+  /**
+   * Unpin a tab in the cache
+   */
+  public static async unpinTab(cache: TabCache, tabId: string): Promise<TabCache> {
+    const updatedTabs = [...cache.tabs];
+    const tabIndex = updatedTabs.findIndex(tab => tab.id === tabId);
+    
+    if (tabIndex >= 0) {
+      // Set the pinned property to false
+      updatedTabs[tabIndex] = {
+        ...updatedTabs[tabIndex],
+        pinned: false
+      };
+      
+      const updatedCache = {
+        ...cache,
+        tabs: updatedTabs,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await this.saveCache(updatedCache);
+      return updatedCache;
+    }
+    
+    return cache;
+  }
+
+  /**
+   * Get the first pinned tab from the cache, if any
+   * This is used to determine which tab should be active when opening the extension
+   */
+  public static getPinnedTabs(cache: TabCache): Tab[] {
+    return cache.tabs.filter((tab: Tab) => tab.pinned);
+  }
+
+  /**
+   * Synchronize the cache across different pages
+   * This ensures that changes made on one page are reflected on other pages
+   */
+  public static async syncCache(): Promise<TabCache | null> {
+    try {
+      console.log('Synchronizing tab cache across pages...');
+      
+      // Get the current cache from storage
+      const result = await chrome.storage.local.get(this.CACHE_KEY);
+      const latestCache = result[this.CACHE_KEY];
+      
+      if (!latestCache) {
+        console.log('No cache found to synchronize');
+        return null;
+      }
+      
+      console.log('Retrieved latest cache from storage:', {
+        tabCount: latestCache.tabs.length,
+        activeTabId: latestCache.activeTabId,
+        lastUpdated: latestCache.lastUpdated
+      });
+      
+      // Get pinned tabs - should be at most one with our updated logic
+      const pinnedTabs = latestCache.tabs.filter((tab: Tab) => tab.pinned);
+      console.log(`Found ${pinnedTabs.length} pinned tabs in latest cache`);
+      
+      // Ensure only one tab is pinned (in case there are multiple from older versions)
+      if (pinnedTabs.length > 1) {
+        console.log('Found multiple pinned tabs, keeping only the most recently edited one');
+        
+        // Sort pinned tabs by lastEdited (newest first)
+        const sortedPinnedTabs = [...pinnedTabs].sort((a, b) => 
+          new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime()
+        );
+        
+        // Keep only the first one pinned, unpin the rest
+        latestCache.tabs = latestCache.tabs.map((tab: Tab) => {
+          if (tab.pinned && tab.id !== sortedPinnedTabs[0].id) {
+            return { ...tab, pinned: false };
+          }
+          return tab;
+        });
+        
+        // Save the updated cache
+        await this.saveCache(latestCache);
+        console.log('Updated cache to ensure only one tab is pinned');
+      }
+      
+      // Determine which tab should be active
+      // Prioritize the pinned tab
+      let newActiveTabId = latestCache.activeTabId;
+      if (pinnedTabs.length > 0) {
+        // Get the pinned tab (should be only one now)
+        const pinnedTab = pinnedTabs[0];
+        newActiveTabId = pinnedTab.id;
+        console.log(`Setting pinned tab ${newActiveTabId} as active`);
+      }
+      
+      // Update the active tab ID if needed
+      if (newActiveTabId !== latestCache.activeTabId) {
+        latestCache.activeTabId = newActiveTabId;
+        await this.saveCache(latestCache);
+        console.log(`Updated active tab to ${newActiveTabId} in synchronized cache`);
+      }
+      
+      return latestCache;
+    } catch (error) {
+      console.error('Failed to synchronize tab cache:', error);
+      return null;
     }
   }
 } 

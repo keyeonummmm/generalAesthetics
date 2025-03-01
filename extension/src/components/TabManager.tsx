@@ -19,6 +19,7 @@ interface Tab {
   syncStatus: 'pending' | 'synced';
   noteId?: string;
   lastEdited: string;
+  pinned?: boolean; // Add pinned property to support tab pinning
 }
 
 interface TabManagerProps {
@@ -43,6 +44,10 @@ export interface TabManagerRef {
   updateTabWithId: (tabId: string, note: Note) => void;
   isNoteOpenInAnyTab: (noteId: string) => boolean;
   addPendingAttachment: (tabId: string, attachment: Attachment) => void;
+  pinTab: (tabId: string) => Promise<void>;
+  unpinTab: (tabId: string) => Promise<void>;
+  isPinned: (tabId: string) => boolean;
+  syncCache: () => Promise<void>;
   
   handleSave: (tabId: string, note: Note) => Promise<void>;
 }
@@ -143,13 +148,35 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       try {
         const cache = await TabCacheManager.initCache();
         if (cache && cache.tabs.length > 0) {
-          setTabs(cache.tabs);
-          setActiveTabId(cache.activeTabId);
+          // Get pinned tabs
+          const pinnedTabs = TabCacheManager.getPinnedTabs(cache);
           
-          // Load attachments for the active tab
-          const activeTab = cache.tabs.find(tab => tab.id === cache.activeTabId);
-          if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
-            loadAttachmentsForTab(activeTab.id);
+          // Set tabs from cache
+          setTabs(cache.tabs);
+          
+          // Prioritize pinned tabs when setting the active tab
+          if (pinnedTabs.length > 0) {
+            // Sort pinned tabs by creation time (newest first)
+            const sortedPinnedTabs = pinnedTabs.sort((a, b) => 
+              new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime()
+            );
+            
+            // Set the first pinned tab as active
+            setActiveTabId(sortedPinnedTabs[0].id);
+            
+            // Load attachments for the active pinned tab
+            if (sortedPinnedTabs[0].attachments && sortedPinnedTabs[0].attachments.length > 0) {
+              loadAttachmentsForTab(sortedPinnedTabs[0].id);
+            }
+          } else {
+            // No pinned tabs, use the active tab from cache
+            setActiveTabId(cache.activeTabId);
+            
+            // Load attachments for the active tab
+            const activeTab = cache.tabs.find(tab => tab.id === cache.activeTabId);
+            if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
+              loadAttachmentsForTab(activeTab.id);
+            }
           }
         } else {
           // Ensure there's always at least one tab
@@ -898,6 +925,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       
       setTabs(updatedCache.tabs);
     },
+    pinTab: async (tabId: string) => {
+      await handlePinTab(tabId);
+    },
+    unpinTab: async (tabId: string) => {
+      await handleUnpinTab(tabId);
+    },
+    isPinned: (tabId: string) => {
+      const tab = tabs.find(tab => tab.id === tabId);
+      return tab?.pinned === true;
+    },
+    syncCache: async () => {
+      await syncCache();
+    },
     handleSave: async (tabId: string, note: Note) => {
       await handleSave(tabId, note);
     }
@@ -1167,25 +1207,139 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
   };
 
+  // Add methods to pin and unpin tabs
+  const handlePinTab = async (tabId: string) => {
+    console.log('Pinning tab:', tabId);
+    
+    // Get current cache
+    const currentCache = await TabCacheManager.initCache();
+    if (!currentCache) return;
+    
+    // Use TabCacheManager to pin the tab (this will now unpin any other pinned tabs)
+    const updatedCache = await TabCacheManager.pinTab(currentCache, tabId);
+    
+    // Update the tabs state with the updated tabs (one pinned, others unpinned)
+    setTabs(updatedCache.tabs);
+    
+    // Set the pinned tab as active
+    setActiveTabId(tabId);
+  };
+  
+  const handleUnpinTab = async (tabId: string) => {
+    console.log('Unpinning tab:', tabId);
+    
+    // Get current cache
+    const currentCache = await TabCacheManager.initCache();
+    if (!currentCache) return;
+    
+    // Use TabCacheManager to unpin the tab
+    const updatedCache = await TabCacheManager.unpinTab(currentCache, tabId);
+    
+    // Update the tabs state with the unpinned tab
+    setTabs(updatedCache.tabs);
+  };
+
+  // Add a function to sort tabs with pinned tabs first
+  const sortTabs = (tabs: Tab[]): Tab[] => {
+    return [...tabs].sort((a, b) => {
+      // First sort by pinned status (pinned tabs first)
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      
+      // If both are pinned or both are not pinned, sort by creation time
+      // Use lastEdited as a proxy for creation time
+      return new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime();
+    });
+  };
+
+  // Add a method to synchronize the cache
+  const syncCache = async () => {
+    console.log('Synchronizing cache...');
+    
+    try {
+      // Use TabCacheManager to synchronize the cache
+      const syncedCache = await TabCacheManager.syncCache();
+      
+      if (syncedCache) {
+        console.log('Cache synchronized successfully:', {
+          tabCount: syncedCache.tabs.length,
+          activeTabId: syncedCache.activeTabId
+        });
+        
+        // Update the tabs state with the synchronized cache
+        setTabs(syncedCache.tabs);
+        
+        // Update the active tab ID
+        setActiveTabId(syncedCache.activeTabId);
+        
+        // Load attachments for the active tab
+        const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
+        if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
+          loadAttachmentsForTab(activeTab.id);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to synchronize cache:', error);
+    }
+  };
+
+  // Add a method to handle visibility changes
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Extension became visible, synchronizing cache...');
+        syncCache();
+      }
+    };
+    
+    // Add event listener for visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Synchronize cache on mount
+    syncCache();
+    
+    // Clean up event listener on unmount
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   return (
     <div className="tab-manager">
       <div className="tab-list">
-        {tabs.map(tab => (
+        {sortTabs(tabs).map(tab => (
           <div 
             key={tab.id}
-            className={`tab ${activeTabId === tab.id ? 'active' : ''}`}
+            className={`tab ${activeTabId === tab.id ? 'active' : ''} ${tab.pinned ? 'pinned' : ''}`}
             onClick={() => handleTabClick(tab.id)}
           >
+            {tab.pinned && <span className="pin-indicator" title="Pinned">📌</span>}
             <span>{tab.isNew ? 'New Note' : (tab.title || 'Untitled')}</span>
-            <button 
-              className="close-tab"
-              onClick={(e) => {
-                e.stopPropagation();
-                confirmCloseTab(tab.id);
-              }}
-            >
-              ×
-            </button>
+            <div className="tab-actions">
+              <button 
+                className="pin-tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (tab.pinned) {
+                    handleUnpinTab(tab.id);
+                  } else {
+                    handlePinTab(tab.id);
+                  }
+                }}
+                title={tab.pinned ? "Unpin tab" : "Pin tab"}
+              >
+                {tab.pinned ? "📌" : "📍"}
+              </button>
+              <button 
+                className="close-tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  confirmCloseTab(tab.id);
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
         ))}
         <button 
