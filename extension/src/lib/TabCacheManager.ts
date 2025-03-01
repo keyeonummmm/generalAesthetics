@@ -14,6 +14,31 @@ export interface Tab {
   noteId?: string;
   lastEdited: string;
   pinned?: boolean;
+  // Add fields for conflict detection and version tracking
+  localVersion: number; // Incremented on each local change
+  lastSyncedVersion?: number; // The version when last synced
+  instanceId?: string; // Unique ID for the browser instance
+  hasConflict?: boolean; // Flag to indicate if this tab has a conflict
+  conflictInfo?: ConflictInfo; // Information about the conflict
+}
+
+// Interface for storage change listener callbacks
+export interface StorageChangeEvent {
+  oldCache?: TabCache;
+  newCache?: TabCache;
+  instanceId?: string;
+  conflicts?: Tab[];
+}
+
+export type StorageChangeListener = (event: StorageChangeEvent) => void;
+
+// New interface for tracking conflict information
+export interface ConflictInfo {
+  originalTabId: string; // ID of the original tab
+  conflictingTabId: string; // ID of the conflicting tab
+  timestamp: string; // When the conflict was detected
+  instanceId: string; // ID of the instance that detected the conflict
+  resolved: boolean; // Whether the conflict has been resolved
 }
 
 export interface AttachmentReference {
@@ -31,6 +56,8 @@ export interface TabCache {
   tabs: Tab[];
   activeTabId: string;
   lastUpdated: string;
+  instanceId?: string; // Add instance ID to track which instance made changes
+  backupTimestamp?: string; // When the last backup was made
 }
 
 /**
@@ -39,8 +66,17 @@ export interface TabCache {
  * It implements lazy loading for attachments to optimize memory usage.
  */
 export class TabCacheManager {
-  private static CACHE_KEY = 'tabCache';
-  private static ATTACHMENT_PREFIX = 'attachment_';
+  private static readonly CACHE_KEY = 'tabCache';
+  private static readonly ATTACHMENT_PREFIX = 'attachment_';
+  private static readonly BACKUP_PREFIX = 'tabCache_backup_';
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAY = 500; // ms
+  private static readonly INSTANCE_ID = crypto.randomUUID(); // Unique ID for this browser instance
+  private static storageChangeListeners: Set<StorageChangeListener> = new Set();
+  private static isOwnUpdate = false;
+  private static lastUpdateTimestamp = 0;
+  private static readonly UPDATE_DEBOUNCE_TIME = 500; // ms
+  private static lastProcessedUpdate: string | null = null;
 
   /**
    * Initialize the cache from storage
@@ -48,7 +84,15 @@ export class TabCacheManager {
   public static async initCache(): Promise<TabCache | null> {
     try {
       const result = await chrome.storage.local.get(this.CACHE_KEY);
-      return result[this.CACHE_KEY] || null;
+      const cache = result[this.CACHE_KEY] || null;
+      
+      // If cache exists but doesn't have an instanceId, add one
+      if (cache && !cache.instanceId) {
+        cache.instanceId = this.INSTANCE_ID;
+        await this.saveCache(cache);
+      }
+      
+      return cache;
     } catch (error) {
       console.error('Failed to initialize tab cache:', error);
       return null;
@@ -58,16 +102,651 @@ export class TabCacheManager {
   /**
    * Save the current cache state to storage
    */
-  public static async saveCache(cache: TabCache): Promise<void> {
+  public static async saveCache(cache: TabCache, retryCount = 0): Promise<void> {
     try {
+      // Mark this as our own update to avoid handling our own changes
+      this.isOwnUpdate = true;
+      
+      // Add instance ID and update timestamp
+      const updatedCache = {
+        ...cache,
+        instanceId: this.INSTANCE_ID,
+        lastUpdated: new Date().toISOString()
+      };
+      
       await chrome.storage.local.set({
-        [this.CACHE_KEY]: {
+        [this.CACHE_KEY]: updatedCache
+      });
+      
+      // Set a timeout to reset isOwnUpdate flag after storage event has been processed
+      setTimeout(() => {
+        this.isOwnUpdate = false;
+      }, 100);
+    } catch (error) {
+      console.error('Failed to save tab cache:', error);
+      this.isOwnUpdate = false; // Reset flag on error
+      
+      // Implement retry mechanism
+      if (retryCount < this.MAX_RETRIES) {
+        console.log(`Retrying save cache (attempt ${retryCount + 1} of ${this.MAX_RETRIES})...`);
+        setTimeout(() => {
+          this.saveCache(cache, retryCount + 1);
+        }, this.RETRY_DELAY);
+      } else {
+        console.error(`Failed to save cache after ${this.MAX_RETRIES} attempts`);
+        // Create a backup of the failed cache
+        this.createBackup(cache, 'save_failed');
+      }
+    }
+  }
+
+  /**
+   * Create a backup of the current cache
+   */
+  public static async createBackup(cache: TabCache, reason: string): Promise<void> {
+    try {
+      const timestamp = new Date().toISOString();
+      const backupKey = `${this.BACKUP_PREFIX}${timestamp}`;
+      
+      await chrome.storage.local.set({
+        [backupKey]: {
           ...cache,
-          lastUpdated: new Date().toISOString()
+          backupTimestamp: timestamp,
+          backupReason: reason
+        }
+      });
+      
+      console.log(`Created cache backup: ${backupKey}`);
+      
+      // Clean up old backups (keep only the last 5)
+      this.cleanupOldBackups();
+    } catch (error) {
+      console.error('Failed to create cache backup:', error);
+    }
+  }
+
+  /**
+   * Clean up old backups, keeping only the most recent ones
+   */
+  private static async cleanupOldBackups(maxBackups = 5): Promise<void> {
+    try {
+      // Get all keys from storage
+      const allStorage = await chrome.storage.local.get(null);
+      if (!allStorage) {
+        console.warn('No storage found when cleaning up old backups');
+        return;
+      }
+      
+      const allKeys = Object.keys(allStorage);
+      
+      // Filter for backup keys
+      const backupKeys = allKeys
+        .filter(key => key.startsWith(this.BACKUP_PREFIX))
+        .sort((a, b) => b.localeCompare(a)); // Sort newest first
+      
+      // Remove old backups
+      if (backupKeys.length > maxBackups) {
+        const keysToRemove = backupKeys.slice(maxBackups);
+        await chrome.storage.local.remove(keysToRemove);
+        console.log(`Removed ${keysToRemove.length} old cache backups`);
+      }
+    } catch (error) {
+      console.error('Failed to clean up old backups:', error);
+    }
+  }
+
+  /**
+   * Restore a cache from a backup
+   */
+  public static async restoreFromBackup(backupKey: string): Promise<TabCache | null> {
+    try {
+      const result = await chrome.storage.local.get(backupKey);
+      const backup = result[backupKey];
+      
+      if (!backup) {
+        console.error(`Backup ${backupKey} not found`);
+        return null;
+      }
+      
+      // Restore the backup to the main cache
+      await this.saveCache(backup);
+      console.log(`Restored cache from backup: ${backupKey}`);
+      
+      return backup;
+    } catch (error) {
+      console.error(`Failed to restore from backup ${backupKey}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * List all available backups
+   */
+  public static async listBackups(): Promise<{key: string, timestamp: string, reason: string}[]> {
+    try {
+      // Get all keys from storage
+      const allStorage = await chrome.storage.local.get(null);
+      if (!allStorage) {
+        console.warn('No storage found when listing backups');
+        return [];
+      }
+      
+      const allKeys = Object.keys(allStorage);
+      
+      // Filter for backup keys and extract metadata
+      const backups = allKeys
+        .filter(key => key.startsWith(this.BACKUP_PREFIX))
+        .map(key => ({
+          key,
+          timestamp: allStorage[key].backupTimestamp || 'unknown',
+          reason: allStorage[key].backupReason || 'unknown'
+        }))
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp)); // Sort newest first
+      
+      return backups;
+    } catch (error) {
+      console.error('Failed to list backups:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Register a listener for storage changes
+   * This allows components to react to changes made in other tabs
+   */
+  public static registerStorageChangeListener(listener: StorageChangeListener): void {
+    // Add the listener to our set
+    this.storageChangeListeners.add(listener);
+    
+    // If this is the first listener, set up the chrome storage listener
+    if (this.storageChangeListeners.size === 1) {
+      this.initStorageChangeListener();
+      console.log('Storage change listener registered');
+    }
+  }
+
+  /**
+   * Unregister a storage change listener
+   */
+  public static unregisterStorageChangeListener(listener: StorageChangeListener): void {
+    // Remove the listener from our set
+    this.storageChangeListeners.delete(listener);
+    
+    // If there are no more listeners, remove the chrome storage listener
+    if (this.storageChangeListeners.size === 0) {
+      chrome.storage.onChanged.removeListener(this.handleStorageChange);
+      console.log('Storage change listener unregistered');
+    }
+  }
+
+  /**
+   * Initialize the storage change listener
+   */
+  private static initStorageChangeListener(): void {
+    // Remove any existing listeners to prevent duplicates
+    chrome.storage.onChanged.removeListener(this.handleStorageChange);
+    
+    // Add the listener
+    chrome.storage.onChanged.addListener(this.handleStorageChange);
+    console.log('Storage change listener initialized');
+  }
+
+  /**
+   * Handle storage changes from other contexts
+   */
+  private static handleStorageChange = (
+    changes: {[key: string]: chrome.storage.StorageChange},
+    areaName: string
+  ): void => {
+    // Only care about local storage changes
+    if (areaName !== 'local') return;
+    
+    // Check if our cache key changed
+    if (changes[this.CACHE_KEY]) {
+      const newValue = changes[this.CACHE_KEY].newValue;
+      const oldValue = changes[this.CACHE_KEY].oldValue;
+      
+      // Skip if this is our own update
+      if (this.isOwnUpdate) {
+        console.log('Ignoring own update to cache');
+        return;
+      }
+      
+      // Implement debouncing to prevent rapid successive updates
+      const now = Date.now();
+      if (now - this.lastUpdateTimestamp < this.UPDATE_DEBOUNCE_TIME) {
+        console.log('Debouncing rapid cache update');
+        return;
+      }
+      this.lastUpdateTimestamp = now;
+      
+      // Check if we've already processed this exact update
+      const updateHash = JSON.stringify(newValue?.lastUpdated);
+      if (updateHash === this.lastProcessedUpdate) {
+        console.log('Ignoring duplicate cache update');
+        return;
+      }
+      this.lastProcessedUpdate = updateHash;
+      
+      console.log('Cache changed externally, checking for conflicts...');
+      this.handleExternalCacheUpdate(newValue, oldValue);
+    }
+  };
+
+  /**
+   * Handle external cache updates and detect conflicts
+   */
+  private static async handleExternalCacheUpdate(
+    newCache: TabCache | undefined, 
+    oldCache: TabCache | undefined
+  ): Promise<void> {
+    if (!newCache) {
+      console.warn('External update with empty cache, ignoring');
+      return;
+    }
+    
+    try {
+      // Get our current cache
+      const result = await chrome.storage.local.get(this.CACHE_KEY);
+      const currentCache = result[this.CACHE_KEY];
+      
+      if (!currentCache) {
+        console.warn('No local cache found when handling external update');
+        return;
+      }
+      
+      // Check for conflicts
+      const conflicts = this.detectConflicts(currentCache, newCache);
+      
+      // Notify all registered listeners
+      this.storageChangeListeners.forEach(listener => {
+        try {
+          listener({
+            oldCache: oldCache,
+            newCache: newCache,
+            instanceId: newCache?.instanceId,
+            conflicts: conflicts.length > 0 ? conflicts : undefined
+          });
+        } catch (error) {
+          console.error('Error in storage change listener:', error);
         }
       });
     } catch (error) {
-      console.error('Failed to save tab cache:', error);
+      console.error('Error handling external cache update:', error);
+    }
+  }
+
+  /**
+   * Detect conflicts between local and remote tabs
+   */
+  public static detectConflicts(localCache: TabCache, remoteCache: TabCache): Tab[] {
+    const conflictingTabs: Tab[] = [];
+    
+    // Skip if either cache is null
+    if (!localCache || !remoteCache) return conflictingTabs;
+    
+    // Check each local tab for conflicts with remote tabs
+    for (const localTab of localCache.tabs) {
+      // Find matching remote tab by ID
+      const remoteTab = remoteCache.tabs.find(tab => tab.id === localTab.id);
+      
+      // Skip if no matching remote tab
+      if (!remoteTab) continue;
+      
+      // Check for conflicts
+      const hasConflict = this.isTabInConflict(localTab, remoteTab);
+      
+      if (hasConflict) {
+        console.log(`Conflict detected for tab ${localTab.id}:`, {
+          localVersion: localTab.localVersion,
+          remoteVersion: remoteTab.localVersion,
+          localLastEdited: localTab.lastEdited,
+          remoteLastEdited: remoteTab.lastEdited
+        });
+        
+        // Mark the local tab as having a conflict
+        localTab.hasConflict = true;
+        localTab.conflictInfo = {
+          originalTabId: localTab.id,
+          conflictingTabId: remoteTab.id,
+          timestamp: new Date().toISOString(),
+          instanceId: remoteCache.instanceId || 'unknown',
+          resolved: false
+        };
+        
+        conflictingTabs.push(localTab);
+      }
+    }
+    
+    return conflictingTabs;
+  }
+
+  /**
+   * Check if two tabs are in conflict
+   */
+  private static isTabInConflict(localTab: Tab, remoteTab: Tab): boolean {
+    // If either tab doesn't have version tracking, we can't detect conflicts
+    if (localTab.localVersion === undefined || remoteTab.localVersion === undefined) {
+      return false;
+    }
+    
+    // If the local tab has been synced and its last synced version matches the remote version,
+    // there's no conflict
+    if (localTab.lastSyncedVersion !== undefined && 
+        localTab.lastSyncedVersion === remoteTab.localVersion) {
+      return false;
+    }
+    
+    // If the content is identical, there's no conflict regardless of versions
+    if (localTab.title === remoteTab.title && localTab.content === remoteTab.content) {
+      return false;
+    }
+    
+    // If both tabs have been modified since their last sync, there's a potential conflict
+    const localModified = localTab.localVersion !== localTab.lastSyncedVersion;
+    const remoteModified = remoteTab.localVersion !== remoteTab.lastSyncedVersion;
+    
+    if (localModified && remoteModified) {
+      // Check if the modifications were made at significantly different times
+      // (more than 5 minutes apart)
+      const localTime = new Date(localTab.lastEdited).getTime();
+      const remoteTime = new Date(remoteTab.lastEdited).getTime();
+      const timeDiff = Math.abs(localTime - remoteTime);
+      
+      // If the edits were made close together, it's more likely to be a conflict
+      if (timeDiff < 5 * 60 * 1000) {
+        return true;
+      }
+      
+      // If the edits were made far apart, the newer one probably has the latest changes
+      // But we still flag it as a conflict if the content differs significantly
+      return this.contentDifferenceIsSignificant(localTab, remoteTab);
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if the content difference between two tabs is significant
+   */
+  private static contentDifferenceIsSignificant(tab1: Tab, tab2: Tab): boolean {
+    // Simple length-based heuristic
+    const titleDiff = Math.abs(tab1.title.length - tab2.title.length);
+    const contentDiff = Math.abs(tab1.content.length - tab2.content.length);
+    
+    // If the difference is more than 20% of the content, consider it significant
+    const titleThreshold = Math.max(tab1.title.length, tab2.title.length) * 0.2;
+    const contentThreshold = Math.max(tab1.content.length, tab2.content.length) * 0.2;
+    
+    return titleDiff > titleThreshold || contentDiff > contentThreshold;
+  }
+
+  /**
+   * Resolve a conflict by creating a new tab with the conflicting content
+   */
+  public static async resolveConflictByCreatingNewTab(
+    cache: TabCache, 
+    conflictingTabId: string
+  ): Promise<TabCache> {
+    // Find the conflicting tab
+    const conflictingTab = cache.tabs.find(tab => tab.id === conflictingTabId);
+    if (!conflictingTab || !conflictingTab.conflictInfo) {
+      console.error(`Cannot resolve conflict: Tab ${conflictingTabId} not found or has no conflict info`);
+      return cache;
+    }
+    
+    // Create a new tab with the conflicting content
+    const newTabId = `conflict-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+    const newTab: Tab = {
+      ...conflictingTab,
+      id: newTabId,
+      title: `${conflictingTab.title} (Conflict)`,
+      hasConflict: false,
+      conflictInfo: undefined,
+      localVersion: 0,
+      lastSyncedVersion: 0,
+      lastEdited: new Date().toISOString()
+    };
+    
+    // Mark the original tab's conflict as resolved
+    const updatedTabs = cache.tabs.map(tab => {
+      if (tab.id === conflictingTabId) {
+        return {
+          ...tab,
+          hasConflict: false,
+          conflictInfo: {
+            ...tab.conflictInfo!,
+            resolved: true
+          }
+        };
+      }
+      return tab;
+    });
+    
+    // Add the new tab
+    updatedTabs.push(newTab);
+    
+    // Update the cache
+    const updatedCache = {
+      ...cache,
+      tabs: updatedTabs,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    await this.saveCache(updatedCache);
+    return updatedCache;
+  }
+
+  /**
+   * Resolve a conflict by keeping the local version
+   */
+  public static async resolveConflictByKeepingLocal(
+    cache: TabCache, 
+    conflictingTabId: string
+  ): Promise<TabCache> {
+    // Find the conflicting tab
+    const conflictingTab = cache.tabs.find(tab => tab.id === conflictingTabId);
+    if (!conflictingTab || !conflictingTab.conflictInfo) {
+      console.error(`Cannot resolve conflict: Tab ${conflictingTabId} not found or has no conflict info`);
+      return cache;
+    }
+    
+    // Mark the conflict as resolved and update the version
+    const updatedTabs = cache.tabs.map(tab => {
+      if (tab.id === conflictingTabId) {
+        return {
+          ...tab,
+          hasConflict: false,
+          conflictInfo: {
+            ...tab.conflictInfo!,
+            resolved: true
+          },
+          // Increment the version to ensure it's higher than the remote
+          localVersion: tab.localVersion + 1,
+          lastSyncedVersion: tab.localVersion + 1
+        };
+      }
+      return tab;
+    });
+    
+    // Update the cache
+    const updatedCache = {
+      ...cache,
+      tabs: updatedTabs,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    await this.saveCache(updatedCache);
+    return updatedCache;
+  }
+
+  /**
+   * Resolve a conflict by keeping the remote version
+   */
+  public static async resolveConflictByKeepingRemote(
+    cache: TabCache, 
+    conflictingTabId: string,
+    remoteTab: Tab
+  ): Promise<TabCache> {
+    // Find the conflicting tab
+    const conflictingTab = cache.tabs.find(tab => tab.id === conflictingTabId);
+    if (!conflictingTab || !conflictingTab.conflictInfo) {
+      console.error(`Cannot resolve conflict: Tab ${conflictingTabId} not found or has no conflict info`);
+      return cache;
+    }
+    
+    // Update the tab with the remote content and mark the conflict as resolved
+    const updatedTabs = cache.tabs.map(tab => {
+      if (tab.id === conflictingTabId) {
+        return {
+          ...remoteTab,
+          hasConflict: false,
+          conflictInfo: {
+            ...tab.conflictInfo!,
+            resolved: true
+          },
+          lastSyncedVersion: remoteTab.localVersion
+        };
+      }
+      return tab;
+    });
+    
+    // Update the cache
+    const updatedCache = {
+      ...cache,
+      tabs: updatedTabs,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    await this.saveCache(updatedCache);
+    return updatedCache;
+  }
+
+  /**
+   * Validate the cache structure and repair if needed
+   */
+  public static async validateAndRepairCache(): Promise<TabCache | null> {
+    try {
+      const cache = await this.initCache();
+      
+      // If no cache exists, create a new one
+      if (!cache) {
+        console.log('No cache found, creating a new one');
+        const newCache: TabCache = {
+          tabs: [],
+          activeTabId: '',
+          lastUpdated: new Date().toISOString(),
+          instanceId: this.INSTANCE_ID
+        };
+        await this.saveCache(newCache);
+        return newCache;
+      }
+      
+      let needsRepair = false;
+      const repairedCache = { ...cache };
+      
+      // Check if required fields exist
+      if (!repairedCache.tabs) {
+        console.warn('Cache missing tabs array, repairing');
+        repairedCache.tabs = [];
+        needsRepair = true;
+      }
+      
+      if (!repairedCache.lastUpdated) {
+        console.warn('Cache missing lastUpdated timestamp, repairing');
+        repairedCache.lastUpdated = new Date().toISOString();
+        needsRepair = true;
+      }
+      
+      if (!repairedCache.instanceId) {
+        console.warn('Cache missing instanceId, repairing');
+        repairedCache.instanceId = this.INSTANCE_ID;
+        needsRepair = true;
+      }
+      
+      // Check if activeTabId is valid
+      if (repairedCache.activeTabId && 
+          repairedCache.tabs.length > 0 && 
+          !repairedCache.tabs.some(tab => tab.id === repairedCache.activeTabId)) {
+        console.warn('Cache has invalid activeTabId, repairing');
+        repairedCache.activeTabId = repairedCache.tabs[0].id;
+        needsRepair = true;
+      }
+      
+      // Check each tab for required fields
+      const repairedTabs = repairedCache.tabs.map(tab => {
+        const repairedTab = { ...tab };
+        let tabNeedsRepair = false;
+        
+        // Check required fields
+        if (!repairedTab.id) {
+          console.warn('Tab missing id, repairing');
+          repairedTab.id = `repaired-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+          tabNeedsRepair = true;
+        }
+        
+        if (repairedTab.title === undefined) {
+          console.warn(`Tab ${repairedTab.id} missing title, repairing`);
+          repairedTab.title = '';
+          tabNeedsRepair = true;
+        }
+        
+        if (repairedTab.content === undefined) {
+          console.warn(`Tab ${repairedTab.id} missing content, repairing`);
+          repairedTab.content = '';
+          tabNeedsRepair = true;
+        }
+        
+        if (repairedTab.syncStatus === undefined) {
+          console.warn(`Tab ${repairedTab.id} missing syncStatus, repairing`);
+          repairedTab.syncStatus = 'pending';
+          tabNeedsRepair = true;
+        }
+        
+        if (repairedTab.lastEdited === undefined) {
+          console.warn(`Tab ${repairedTab.id} missing lastEdited, repairing`);
+          repairedTab.lastEdited = new Date().toISOString();
+          tabNeedsRepair = true;
+        }
+        
+        if (repairedTab.localVersion === undefined) {
+          console.warn(`Tab ${repairedTab.id} missing localVersion, repairing`);
+          repairedTab.localVersion = 0;
+          tabNeedsRepair = true;
+        }
+        
+        return tabNeedsRepair ? repairedTab : tab;
+      });
+      
+      if (repairedTabs.some(tab => tab !== cache.tabs.find(t => t.id === tab.id))) {
+        repairedCache.tabs = repairedTabs;
+        needsRepair = true;
+      }
+      
+      // Save the repaired cache if needed
+      if (needsRepair) {
+        console.log('Cache repaired, saving changes');
+        await this.saveCache(repairedCache);
+      } else {
+        console.log('Cache validation passed, no repairs needed');
+      }
+      
+      return repairedCache;
+    } catch (error) {
+      console.error('Failed to validate and repair cache:', error);
+      
+      // Try to restore from the most recent backup
+      try {
+        const backups = await this.listBackups();
+        if (backups.length > 0) {
+          console.log('Attempting to restore from most recent backup');
+          return await this.restoreFromBackup(backups[0].key);
+        }
+      } catch (backupError) {
+        console.error('Failed to restore from backup:', backupError);
+      }
+      
+      return null;
     }
   }
 
@@ -279,6 +958,12 @@ export class TabCacheManager {
     }
     
     const tab = updatedTabs[tabIndex];
+    
+    // Check if this attachment already exists in the tab to prevent duplication
+    if (tab.attachments && tab.attachments.some(a => a.id === attachment.id)) {
+      console.log(`Attachment ${attachment.id} already exists in tab ${tabId}, skipping duplicate addition`);
+      return cache;
+    }
     
     // Create a reference to store in the tab
     const attachmentReference = this.createAttachmentReference(attachment);
@@ -597,26 +1282,20 @@ export class TabCacheManager {
    */
   public static async syncCache(): Promise<TabCache | null> {
     try {
-      console.log('Synchronizing tab cache across pages...');
+      console.log('Synchronizing tab cache...');
       
-      // Get the current cache from storage
-      const result = await chrome.storage.local.get(this.CACHE_KEY);
-      const latestCache = result[this.CACHE_KEY];
-      
+      // Get the latest cache
+      const latestCache = await this.initCache();
       if (!latestCache) {
-        console.log('No cache found to synchronize');
+        console.error('Failed to initialize cache for sync');
         return null;
       }
       
-      console.log('Retrieved latest cache from storage:', {
-        tabCount: latestCache.tabs.length,
-        activeTabId: latestCache.activeTabId,
-        lastUpdated: latestCache.lastUpdated
-      });
+      // Clean up duplicate attachments
+      const cleanedCache = await this.cleanupDuplicateAttachments(latestCache);
       
-      // Get pinned tabs - should be at most one with our updated logic
-      const pinnedTabs = latestCache.tabs.filter((tab: Tab) => tab.pinned);
-      console.log(`Found ${pinnedTabs.length} pinned tabs in latest cache`);
+      // Get all pinned tabs
+      const pinnedTabs = this.getPinnedTabs(cleanedCache);
       
       // Ensure only one tab is pinned (in case there are multiple from older versions)
       if (pinnedTabs.length > 1) {
@@ -628,7 +1307,7 @@ export class TabCacheManager {
         );
         
         // Keep only the first one pinned, unpin the rest
-        latestCache.tabs = latestCache.tabs.map((tab: Tab) => {
+        cleanedCache.tabs = cleanedCache.tabs.map((tab: Tab) => {
           if (tab.pinned && tab.id !== sortedPinnedTabs[0].id) {
             return { ...tab, pinned: false };
           }
@@ -636,31 +1315,156 @@ export class TabCacheManager {
         });
         
         // Save the updated cache
-        await this.saveCache(latestCache);
+        await this.saveCache(cleanedCache);
         console.log('Updated cache to ensure only one tab is pinned');
       }
       
       // Determine which tab should be active
       // Prioritize the pinned tab
-      let newActiveTabId = latestCache.activeTabId;
+      let newActiveTabId = cleanedCache.activeTabId;
+      let needsUpdate = false;
+      
       if (pinnedTabs.length > 0) {
         // Get the pinned tab (should be only one now)
         const pinnedTab = pinnedTabs[0];
-        newActiveTabId = pinnedTab.id;
-        console.log(`Setting pinned tab ${newActiveTabId} as active`);
+        if (newActiveTabId !== pinnedTab.id) {
+          newActiveTabId = pinnedTab.id;
+          needsUpdate = true;
+          console.log(`Setting pinned tab ${newActiveTabId} as active`);
+        }
       }
+      
+      // Synchronize attachments
+      await this.synchronizeAttachments(cleanedCache);
       
       // Update the active tab ID if needed
-      if (newActiveTabId !== latestCache.activeTabId) {
-        latestCache.activeTabId = newActiveTabId;
-        await this.saveCache(latestCache);
+      if (needsUpdate) {
+        cleanedCache.activeTabId = newActiveTabId;
+        await this.saveCache(cleanedCache);
         console.log(`Updated active tab to ${newActiveTabId} in synchronized cache`);
+      } else {
+        console.log('No changes needed during sync, avoiding unnecessary save');
       }
       
-      return latestCache;
+      return cleanedCache;
     } catch (error) {
       console.error('Failed to synchronize tab cache:', error);
       return null;
+    }
+  }
+  
+  /**
+   * Synchronize attachments across different instances of the extension
+   * This ensures that attachment data is available to all instances
+   */
+  private static async synchronizeAttachments(cache: TabCache): Promise<void> {
+    try {
+      if (!cache || !cache.tabs || cache.tabs.length === 0) {
+        return;
+      }
+      
+      console.log('Synchronizing attachment data...');
+      
+      // Get all storage keys
+      const allStorage = await chrome.storage.local.get(null);
+      const allKeys = Object.keys(allStorage);
+      
+      // Get all attachment references from all tabs
+      const attachmentRefs: Map<number, Tab> = new Map();
+      const duplicateAttachmentIds: Set<number> = new Set();
+      
+      // First pass: identify duplicate attachment references
+      for (const tab of cache.tabs) {
+        if (tab.attachments && tab.attachments.length > 0) {
+          // Check for duplicates within the same tab
+          const seenIdsInTab = new Set<number>();
+          
+          for (const attachment of tab.attachments) {
+            if (attachment.id) {
+              if (seenIdsInTab.has(attachment.id)) {
+                // Duplicate within the same tab
+                duplicateAttachmentIds.add(attachment.id);
+                console.warn(`Found duplicate attachment ${attachment.id} in tab ${tab.id}`);
+              } else {
+                seenIdsInTab.add(attachment.id);
+              }
+              
+              if (attachmentRefs.has(attachment.id)) {
+                // Duplicate across tabs
+                duplicateAttachmentIds.add(attachment.id);
+                console.warn(`Found duplicate attachment ${attachment.id} across tabs`);
+              } else {
+                attachmentRefs.set(attachment.id, tab);
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`Found ${attachmentRefs.size} unique attachment references to check`);
+      if (duplicateAttachmentIds.size > 0) {
+        console.warn(`Found ${duplicateAttachmentIds.size} duplicate attachment references`);
+      }
+      
+      // Check if each attachment exists in storage
+      const missingAttachments: number[] = [];
+      for (const attachmentId of attachmentRefs.keys()) {
+        const key = `${this.ATTACHMENT_PREFIX}${attachmentId}`;
+        if (!allKeys.includes(key)) {
+          missingAttachments.push(attachmentId);
+        }
+      }
+      
+      // Determine if we need to update the cache
+      let cacheUpdated = false;
+      
+      if (missingAttachments.length > 0 || duplicateAttachmentIds.size > 0) {
+        console.warn(`Found ${missingAttachments.length} missing attachments and ${duplicateAttachmentIds.size} duplicates`);
+        
+        // Remove references to missing attachments and deduplicate references
+        const updatedTabs = cache.tabs.map(tab => {
+          if (tab.attachments && tab.attachments.length > 0) {
+            // Filter out missing attachments and deduplicate
+            const seenIds = new Set<number>();
+            const filteredAttachments = tab.attachments.filter(attachment => {
+              if (!attachment.id) return false;
+              
+              // Remove if missing or already seen (duplicate)
+              if (missingAttachments.includes(attachment.id) || seenIds.has(attachment.id)) {
+                return false;
+              }
+              
+              // Keep this one and mark as seen
+              seenIds.add(attachment.id);
+              return true;
+            });
+            
+            if (filteredAttachments.length !== tab.attachments.length) {
+              cacheUpdated = true;
+              return {
+                ...tab,
+                attachments: filteredAttachments
+              };
+            }
+          }
+          return tab;
+        });
+        
+        if (cacheUpdated) {
+          const updatedCache = {
+            ...cache,
+            tabs: updatedTabs,
+            lastUpdated: new Date().toISOString()
+          };
+          
+          await this.saveCache(updatedCache);
+          console.log('Updated cache to remove missing and duplicate attachment references');
+        }
+      } else {
+        console.log('All attachment references are valid and unique');
+      }
+    } catch (error) {
+      console.error('Failed to synchronize attachments:', error);
     }
   }
 
@@ -736,6 +1540,68 @@ export class TabCacheManager {
       console.log(`Successfully cleaned up attachments for deleted note ${noteId}`);
     } catch (error) {
       console.error(`Failed to clean up attachments for note ${noteId}:`, error);
+    }
+  }
+
+  /**
+   * Clean up duplicate attachments in the cache
+   * This is a utility function to fix issues with duplicate attachments
+   */
+  public static async cleanupDuplicateAttachments(cache: TabCache): Promise<TabCache> {
+    try {
+      if (!cache || !cache.tabs || cache.tabs.length === 0) {
+        return cache;
+      }
+      
+      console.log('Cleaning up duplicate attachments in cache...');
+      
+      let cacheUpdated = false;
+      const updatedTabs = cache.tabs.map(tab => {
+        if (tab.attachments && tab.attachments.length > 0) {
+          // Check for duplicates within the same tab
+          const seenIds = new Set<number>();
+          const uniqueAttachments = tab.attachments.filter(attachment => {
+            if (!attachment.id) return false;
+            
+            if (seenIds.has(attachment.id)) {
+              // This is a duplicate
+              console.log(`Removing duplicate attachment ${attachment.id} from tab ${tab.id}`);
+              return false;
+            }
+            
+            // Keep this one and mark as seen
+            seenIds.add(attachment.id);
+            return true;
+          });
+          
+          if (uniqueAttachments.length !== tab.attachments.length) {
+            cacheUpdated = true;
+            console.log(`Removed ${tab.attachments.length - uniqueAttachments.length} duplicate attachments from tab ${tab.id}`);
+            return {
+              ...tab,
+              attachments: uniqueAttachments
+            };
+          }
+        }
+        return tab;
+      });
+      
+      if (cacheUpdated) {
+        const updatedCache = {
+          ...cache,
+          tabs: updatedTabs,
+          lastUpdated: new Date().toISOString()
+        };
+        
+        await this.saveCache(updatedCache);
+        console.log('Updated cache to remove duplicate attachment references');
+        return updatedCache;
+      }
+      
+      return cache;
+    } catch (error) {
+      console.error('Failed to clean up duplicate attachments:', error);
+      return cache;
     }
   }
 } 

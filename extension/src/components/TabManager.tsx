@@ -1,10 +1,11 @@
-import { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import { useState, forwardRef, useImperativeHandle, useEffect, useRef, useCallback } from 'react';
 import NoteInput from './NoteInput';
 import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
-import { Attachment } from '../lib/Attachment';
+import { Attachment, AttachmentManager } from '../lib/Attachment';
 import '../styles/components/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
-import { TabCacheManager, Tab as CacheTab, TabCache, AttachmentReference } from '../lib/TabCacheManager';
+import { TabCacheManager, Tab as CacheTab, TabCache, AttachmentReference, StorageChangeEvent } from '../lib/TabCacheManager';
+import { useVisibilityChange } from '../hooks/useVisibilityChange';
 
 interface Tab {
   id: string;
@@ -20,6 +21,18 @@ interface Tab {
   noteId?: string;
   lastEdited: string;
   pinned?: boolean; // Add pinned property to support tab pinning
+  // Add new fields for conflict detection and version tracking
+  localVersion: number;
+  lastSyncedVersion?: number;
+  instanceId?: string;
+  hasConflict?: boolean;
+  conflictInfo?: {
+    originalTabId: string;
+    conflictingTabId: string;
+    timestamp: string;
+    instanceId: string;
+    resolved: boolean;
+  };
 }
 
 interface TabManagerProps {
@@ -47,7 +60,7 @@ export interface TabManagerRef {
   pinTab: (tabId: string) => Promise<void>;
   unpinTab: (tabId: string) => Promise<void>;
   isPinned: (tabId: string) => boolean;
-  syncCache: () => Promise<void>;
+  syncCache: () => Promise<boolean>;
   
   handleSave: (tabId: string, note: Note) => Promise<void>;
 }
@@ -83,26 +96,22 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   const displayTitle = tabTitle.trim() ? tabTitle : 'Untitled Note';
 
   return (
-    <div className="confirmation-dialog-backdrop">
-      <div className="confirmation-dialog">
-        <div className="confirmation-dialog-header">
-          <h3>Unsaved Changes</h3>
-          <button className="close-dialog" onClick={onClose}>×</button>
-        </div>
-        <div className="confirmation-dialog-content">
-          <p>You have unsaved changes in "{displayTitle}".</p>
-          <p>Would you like to save before closing?</p>
-        </div>
-        <div className="confirmation-dialog-actions">
-          <button 
-            className="dialog-btn cancel-btn" 
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+        <h3 className="text-lg font-medium mb-4 dark:text-white">Unsaved Changes</h3>
+        <p className="mb-6 dark:text-gray-300">
+          You have unsaved changes in "{displayTitle}". Would you like to save before closing?
+        </p>
+        <div className="flex justify-end space-x-3">
+          <button
             onClick={() => onCancel(tabId)}
+            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
           >
-            Close Without Saving
+            Don't Save
           </button>
-          <button 
-            className="dialog-btn confirm-btn" 
+          <button
             onClick={() => onConfirm(tabId)}
+            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded"
           >
             Save & Close
           </button>
@@ -123,7 +132,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       content: '', 
       isNew: true, 
       syncStatus: 'pending' as const,
-      lastEdited: new Date().toISOString()
+      lastEdited: new Date().toISOString(),
+      localVersion: 0
     };
     return [initialTab];
   });
@@ -135,12 +145,22 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   const [confirmationState, setConfirmationState] = useState<{
     isOpen: boolean;
     tabId: string;
-    hasUnsavedChanges: boolean;
+    tabTitle: string;
+    action: string;
   }>({
     isOpen: false,
     tabId: '',
-    hasUnsavedChanges: false
+    tabTitle: '',
+    action: ''
   });
+
+  // Add state for conflict handling
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [conflictingTabs, setConflictingTabs] = useState<Tab[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Track visibility changes to sync cache when tab becomes visible
+  const isVisible = useVisibilityChange();
 
   // Load cache on mount
   useEffect(() => {
@@ -186,7 +206,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             content: '', 
             isNew: true, 
             syncStatus: 'pending' as const,
-            lastEdited: new Date().toISOString()
+            lastEdited: new Date().toISOString(),
+            localVersion: 0
           };
           setTabs([initialTab]);
           setActiveTabId(initialTab.id);
@@ -200,7 +221,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           content: '', 
           isNew: true, 
           syncStatus: 'pending' as const,
-          lastEdited: new Date().toISOString()
+          lastEdited: new Date().toISOString(),
+          localVersion: 0
         };
         setTabs([initialTab]);
         setActiveTabId(initialTab.id);
@@ -286,7 +308,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     
     try {
       // First try to load from cache
-      const loadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab);
+      const loadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab as CacheTab);
       
       // If we couldn't load all attachments from cache and this is a saved note,
       // try loading them from the database
@@ -313,7 +335,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               }
               
               // After updating the cache, try loading again
-              const reloadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab);
+              const reloadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab as CacheTab);
               
               if (reloadedAttachments.length > loadedAttachments.length) {
                 console.log(`Successfully restored ${reloadedAttachments.length - loadedAttachments.length} attachments from database to cache`);
@@ -392,15 +414,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     console.log('Confirming tab close:', tabId);
     
     const tab = tabs.find(tab => tab.id === tabId);
-    if (!tab) return;
+    
+    if (!tab) {
+      console.warn(`Tab ${tabId} not found for confirmation`);
+      return;
+    }
     
     // Check if the tab is completely clean (new tab with no content, title, noteId, or attachments)
     const isCleanTab = tab.isNew && 
-                       !tab.noteId && 
-                       !tab.title.trim() && 
-                       !tab.content.trim() && 
-                       (!tab.attachments || tab.attachments.length === 0) &&
-                       tab.syncStatus === 'pending';
+                      !tab.noteId && 
+                      !tab.title.trim() && 
+                      !tab.content.trim() && 
+                      (!tab.attachments || tab.attachments.length === 0) &&
+                      tab.syncStatus === 'pending';
     
     if (isCleanTab) {
       console.log('Tab is completely clean, closing without confirmation');
@@ -410,66 +436,24 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     
     // For tabs with a noteId but no changes, also skip confirmation
     if (tab.noteId && tab.syncStatus === 'synced') {
-      try {
-        const savedNote = await NotesDB.getNote(tab.noteId);
-        if (savedNote) {
-          // Compare titles and content to see if there are changes
-          const titleChanged = tab.title !== savedNote.title;
-          const contentChanged = tab.content !== savedNote.content;
-          
-          // If nothing has changed, close without confirmation
-          if (!titleChanged && !contentChanged) {
-            console.log('Tab has no changes compared to saved note, closing without confirmation');
-            closeTab(tabId);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Error checking for changes:', error);
-        // Continue with normal confirmation flow if we can't check
-      }
+      console.log('Tab is synced with no changes, closing without confirmation');
+      closeTab(tabId);
+      return;
     }
     
-    // Check if the tab has unsaved changes
-    let hasUnsavedChanges = tab.syncStatus === 'pending';
-    
-    // If the tab has a noteId, also check if content has changed compared to the saved note
-    if (tab.noteId && !hasUnsavedChanges) {
-      try {
-        const savedNote = await NotesDB.getNote(tab.noteId);
-        if (savedNote) {
-          // Compare titles and content to see if there are changes
-          const titleChanged = tab.title !== savedNote.title;
-          const contentChanged = tab.content !== savedNote.content;
-          
-          // If either has changed, there are unsaved changes
-          hasUnsavedChanges = titleChanged || contentChanged;
-          
-          if (hasUnsavedChanges) {
-            console.log('Detected unsaved changes compared to saved note:', {
-              titleChanged,
-              contentChanged
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error checking for unsaved changes:', error);
-        // If we can't check, assume there are changes
-        hasUnsavedChanges = true;
-      }
-    }
+    // Check if there are unsaved changes
+    const hasUnsavedChanges = tab.syncStatus === 'pending';
     
     if (hasUnsavedChanges) {
       console.log('Tab has unsaved changes, showing confirmation dialog');
-      // Show confirmation dialog
       setConfirmationState({
         isOpen: true,
         tabId,
-        hasUnsavedChanges
+        tabTitle: tab.title || 'Untitled',
+        action: 'close'
       });
     } else {
-      console.log('No unsaved changes detected, closing tab immediately');
-      // No unsaved changes, close immediately
+      console.log('Tab has no unsaved changes, closing without confirmation');
       closeTab(tabId);
     }
   };
@@ -479,78 +463,23 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (!tab) return;
     
     try {
-      // Check if we have attachments to save
-      let attachmentsToSave: Attachment[] = [];
-      
-      if (tab.attachments && tab.attachments.length > 0) {
-        if (tab.loadedAttachments && tab.loadedAttachments.length === tab.attachments.length) {
-          // Use already loaded attachments
-          attachmentsToSave = tab.loadedAttachments;
-        } else {
-          // Load attachments from cache
-          console.log('Loading attachments for save operation');
-          attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
-        }
-      }
-      
-      console.log('Saving note before closing tab:', {
-        tabId,
+      // Save the tab first
+      await handleSave(tabId, {
+        id: tab.noteId || '',
         title: tab.title,
-        hasAttachments: attachmentsToSave.length > 0,
-        attachmentCount: attachmentsToSave.length
+        content: tab.content,
+        version: tab.version || 0,
+        attachments: tab.loadedAttachments || [],
+        createdAt: tab.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
       
-      let savedNote: Note;
-      
-      if (!tab.noteId) {
-        // Create a new note
-        savedNote = await NotesDB.createNote(
-          tab.title,
-          tab.content,
-          attachmentsToSave
-        );
-        console.log('Created new note before closing tab:', savedNote.id);
-      } else {
-        // Update existing note
-        savedNote = await NotesDB.updateNote(
-          tab.noteId,
-          tab.title,
-          tab.content,
-          tab.version,
-          attachmentsToSave
-        );
-        console.log('Updated note before closing tab:', savedNote.id);
-      }
-      
-      // Update the tab with saved note data to mark it as synced
-      setTabs(prevTabs => prevTabs.map(t => {
-        if (t.id === tabId) {
-          return {
-            ...t,
-            noteId: savedNote.id,
-            version: savedNote.version,
-            syncStatus: 'synced' as const
-          };
-        }
-        return t;
-      }));
-      
-      // Close the tab after saving
-      console.log('Note saved successfully, now closing tab:', tabId);
-      closeTab(tabId);
+      // Then close it
+      await handleCloseWithoutSaving(tabId);
     } catch (error) {
-      console.error('Failed to save note before closing tab:', error);
-      // Ask if they want to close without saving
-      if (confirm('Failed to save note. Close tab without saving?')) {
-        closeTab(tabId);
-      }
-    } finally {
-      // Reset confirmation state
-      setConfirmationState({
-        isOpen: false,
-        tabId: '',
-        hasUnsavedChanges: false
-      });
+      console.error('Failed to save and close tab:', error);
+      // Show error message to user
+      alert('Failed to save note before closing. Please try again.');
     }
   };
   
@@ -562,7 +491,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     setConfirmationState({
       isOpen: false,
       tabId: '',
-      hasUnsavedChanges: false
+      tabTitle: '',
+      action: ''
     });
   };
 
@@ -576,89 +506,20 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       return;
     }
     
-    // Get current cache
-    const currentCache = await TabCacheManager.initCache();
-    if (!currentCache) return;
-    
-    // If the tab has a noteId, we need to handle it specially
-    // We want to remove the tab but not delete the note's attachments from storage
-    // since they might be needed by other tabs or in the future
-    if (tabToClose.noteId) {
-      console.log(`Tab ${tabId} is associated with note ${tabToClose.noteId}`);
-      
-      // Check if this note is open in any other tabs
-      const otherTabsWithSameNote = tabs.filter(
-        tab => tab.noteId === tabToClose.noteId && tab.id !== tabId
-      );
-      
-      if (otherTabsWithSameNote.length > 0) {
-        console.log(`Note ${tabToClose.noteId} is open in ${otherTabsWithSameNote.length} other tabs, preserving attachments`);
-      } else {
-        console.log(`Note ${tabToClose.noteId} is not open in any other tabs`);
-      }
+    // Check if the tab has unsaved changes
+    if (tabToClose.syncStatus === 'pending') {
+      // Show confirmation dialog
+      setConfirmationState({
+        isOpen: true,
+        tabId,
+        tabTitle: tabToClose.title || 'Untitled',
+        action: 'close'
+      });
+      return;
     }
     
-    // Use TabCacheManager to remove the tab and clean up its attachments
-    const updatedCache = await TabCacheManager.removeTab(currentCache, tabId);
-    
-    // If no tabs remain, create a new empty tab
-    if (updatedCache.tabs.length === 0) {
-      const newTabId = `new-${uuidv4()}`;
-      console.log('Creating new empty tab:', newTabId);
-      const newTab: Tab = { 
-        id: newTabId, 
-        title: '', 
-        content: '', 
-        isNew: true,
-        syncStatus: 'pending' as const,
-        lastEdited: new Date().toISOString(),
-        pinned: false // Explicitly set to false to ensure new tabs are never pinned
-      };
-      
-      // Update the cache with the new tab
-      updatedCache.tabs = [newTab];
-      updatedCache.activeTabId = newTabId;
-      await TabCacheManager.saveCache(updatedCache);
-      
-      setTabs([newTab]);
-      setActiveTabId(newTabId);
-      onContentChange(
-        newTabId,
-        '',
-        '',
-        undefined,
-        undefined
-      );
-      
-      // Only clean up orphaned attachments, not all caches
-      await TabCacheManager.cleanupOrphanedAttachments();
-    } else if (updatedCache.tabs.length === 1 && updatedCache.tabs[0].id.startsWith('new-')) {
-      // If there's only one tab left and it's a new tab, clean up orphaned attachments
-      // but don't clear all caches to preserve the tab's state
-      console.log('Only one new tab remains, cleaning up orphaned attachments');
-      await TabCacheManager.cleanupOrphanedAttachments();
-      
-      setTabs(updatedCache.tabs);
-      setActiveTabId(updatedCache.activeTabId);
-    } else {
-      // Normal case - update tabs and active tab
-      setTabs(updatedCache.tabs);
-      
-      // Update active tab if needed
-      if (activeTabId === tabId) {
-        setActiveTabId(updatedCache.activeTabId);
-        const newActiveTab = updatedCache.tabs.find(t => t.id === updatedCache.activeTabId);
-        if (newActiveTab) {
-          onContentChange(
-            newActiveTab.id,
-            newActiveTab.title,
-            newActiveTab.content,
-            newActiveTab.version,
-            newActiveTab.noteId
-          );
-        }
-      }
-    }
+    // No unsaved changes, proceed with closing
+    await handleCloseWithoutSaving(tabId);
   };
 
   const addTab = (note?: Note, forceNew: boolean = false) => {
@@ -717,7 +578,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             noteId: note.id,
             syncStatus: 'synced' as const, // Explicitly set to synced for notes from DB
             lastEdited: new Date().toISOString(),
-            pinned: false // Ensure the tab is not pinned by default
+            pinned: false, // Ensure the tab is not pinned by default
+            localVersion: 0
           };
         }
         
@@ -751,7 +613,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       noteId: note ? note.id : undefined,
       syncStatus: note ? 'synced' : 'pending',
       lastEdited: new Date().toISOString(),
-      pinned: false // Ensure new tabs are never pinned by default
+      pinned: false, // Ensure new tabs are never pinned by default
+      localVersion: 0
     };
 
     setTabs(prevTabs => [...prevTabs, newTab]);
@@ -829,7 +692,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               isNew: true,
               syncStatus: 'pending' as const,
               lastEdited: new Date().toISOString(),
-              pinned: false // Always reset pinned status
+              pinned: false, // Always reset pinned status
+              localVersion: 0
             };
           }
           return t;
@@ -885,129 +749,62 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     await TabCacheManager.cleanupOrphanedAttachments();
   };
 
+  // Expose methods to parent component
   useImperativeHandle(ref, () => ({
-    addTab: (note: Note) => {
-      // Use the component-level addTab function for consistency
-      // We don't force new tabs when opening notes, so forceNew=false
-      addTab(note, false);
-    },
-    updateTab: (savedNote: Note) => {
-      setTabs(prevTabs => prevTabs.map(tab =>
-        tab.id === activeTabId ? {
-          ...tab,
-          id: savedNote.id,
-          title: savedNote.title,
-          content: savedNote.content,
-          version: savedNote.version,
-          createdAt: savedNote.createdAt,
-          updatedAt: savedNote.updatedAt,
-          syncStatus: 'synced' as const,
-          isNew: false
-        } : tab
-      ));
-
-      if (activeTabId.startsWith('new-')) {
-        setActiveTabId(savedNote.id);
-      }
-    },
+    addTab,
+    updateTab,
+    removeTabByNoteId,
     getActiveTab: () => {
-      const activeTab = tabs.find(tab => tab.id === activeTabId);
-      if (!activeTab) return null;
+      const tab = tabs.find(tab => tab.id === activeTabId);
+      if (!tab) return null;
       
       return {
-        id: activeTab.id,
-        title: activeTab.title,
-        content: activeTab.content,
-        version: activeTab.version,
-        noteId: activeTab.noteId,
-        attachments: activeTab.loadedAttachments
+        id: tab.id,
+        title: tab.title,
+        content: tab.content,
+        version: tab.version,
+        noteId: tab.noteId,
+        attachments: tab.loadedAttachments
       };
     },
-    updateTabContent: (id: string, title: string, content: string) => {
-      updateTabState(id, {
-        title,
-        content,
-        syncStatus: 'pending' as const
-      });
+    updateTabContent: (id, title, content) => {
+      handleTitleChange(id, title);
+      handleContentChange(id, content);
     },
-    removeTabContent: async (noteId: string) => {
-      await removeTabContent(noteId);
-    },
-    removeTabByNoteId: async (noteId: string) => {
-      await removeTabByNoteId(noteId);
-    },
-    updateTabWithId: (tabId: string, note: Note) => {
-      console.log('TabManager.updateTabWithId called:', {
-        tabId,
-        note,
-        currentTabs: tabs
-      });
-      
-      setTabs(prevTabs => {
-        const updatedTabs = prevTabs.map(tab => {
-          if (tab.id === tabId) {
-            console.log('Updating tab:', {
-              before: tab,
-              after: {
-                ...tab,
-                noteId: note.id,
-                title: note.title,
-                content: note.content,
-                version: note.version,
-                attachments: note.attachments,
-                isNew: false,
-                syncStatus: 'synced'
-              }
-            });
-            return {
-              ...tab,
-              noteId: note.id,
-              title: note.title,
-              content: note.content,
-              version: note.version,
-              attachments: note.attachments,
-              isNew: false,
-              syncStatus: 'synced' as const
-            };
-          }
-          return tab;
+    removeTabContent,
+    updateTabWithId: (tabId, note) => {
+      const tab = tabs.find(tab => tab.id === tabId);
+      if (tab) {
+        updateTabState(tabId, {
+          title: note.title,
+          content: note.content,
+          version: note.version,
+          noteId: note.id,
+          syncStatus: 'synced',
+          lastEdited: new Date().toISOString()
         });
-        console.log('Tabs after update:', updatedTabs);
-        return updatedTabs;
-      });
+      }
     },
-    isNoteOpenInAnyTab: (noteId: string) => {
-      return tabs.some(tab => tab.noteId === noteId || tab.id === noteId);
+    isNoteOpenInAnyTab: (noteId) => {
+      return tabs.some(tab => tab.noteId === noteId);
     },
-    addPendingAttachment: async (tabId: string, attachment: Attachment) => {
-      // Get current cache
-      const currentCache = await TabCacheManager.initCache();
-      if (!currentCache) return;
-      
-      // Use TabCacheManager to add the attachment
-      const updatedCache = await TabCacheManager.addAttachmentToTab(
-        currentCache,
-        tabId,
-        attachment
-      );
-      
-      setTabs(updatedCache.tabs);
+    addPendingAttachment: (tabId, attachment) => {
+      handleAttachmentAdd(tabId, attachment);
     },
-    pinTab: async (tabId: string) => {
+    pinTab: async (tabId) => {
       await handlePinTab(tabId);
     },
-    unpinTab: async (tabId: string) => {
+    unpinTab: async (tabId) => {
       await handleUnpinTab(tabId);
     },
-    isPinned: (tabId: string) => {
+    isPinned: (tabId) => {
       const tab = tabs.find(tab => tab.id === tabId);
-      return tab?.pinned === true;
+      return tab ? !!tab.pinned : false;
     },
-    syncCache: async () => {
-      await syncCache();
-    },
-    handleSave: async (tabId: string, note: Note) => {
+    syncCache,
+    handleSave: async (tabId, note) => {
       await handleSave(tabId, note);
+      // Return void to match the interface
     }
   }));
 
@@ -1163,6 +960,17 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (!tab) return;
 
     try {
+      // Increment the localVersion when saving
+      setTabs(prevTabs => prevTabs.map(t => {
+        if (t.id === tabId) {
+          return {
+            ...t,
+            localVersion: (t.localVersion || 0) + 1
+          };
+        }
+        return t;
+      }));
+      
       // Load full attachments if they're not already loaded
       let attachmentsToSave: Attachment[] = [];
       
@@ -1173,7 +981,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         } else {
           // Load attachments from cache
           console.log('Loading attachments for save operation');
-          attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
+          attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab as CacheTab);
         }
       }
       
@@ -1231,10 +1039,29 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                   // Use the TabCacheManager to update the cache with the full attachment data
                   console.log(`Ensuring ${attachmentsToSave.length} attachments are cached for saved note ${savedNote.id}`);
                   
-                  for (const attachment of attachmentsToSave) {
-                    // Add each attachment to the tab in the cache
-                    await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
-                    console.log(`Cached attachment ${attachment.id} for note ${savedNote.id}`);
+                  // First, check if the tab already has these attachments to prevent duplication
+                  const tabInCache = currentCache.tabs.find(t => t.id === tabId);
+                  if (tabInCache) {
+                    const existingAttachmentIds = new Set(
+                      tabInCache.attachments?.map(a => a.id) || []
+                    );
+                    
+                    // Only add attachments that don't already exist in the tab
+                    for (const attachment of attachmentsToSave) {
+                      if (attachment.id && !existingAttachmentIds.has(attachment.id)) {
+                        await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
+                        console.log(`Cached attachment ${attachment.id} for note ${savedNote.id}`);
+                        existingAttachmentIds.add(attachment.id);
+                      } else if (attachment.id) {
+                        console.log(`Attachment ${attachment.id} already exists in tab ${tabId}, skipping duplicate caching`);
+                      }
+                    }
+                  } else {
+                    // Tab not found in cache, add all attachments
+                    for (const attachment of attachmentsToSave) {
+                      await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
+                      console.log(`Cached attachment ${attachment.id} for note ${savedNote.id}`);
+                    }
                   }
                   
                   // Verify all attachments were cached
@@ -1277,94 +1104,359 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   // Add methods to pin and unpin tabs
   const handlePinTab = async (tabId: string) => {
-    console.log('Pinning tab:', tabId);
-    
-    // Get current cache
-    const currentCache = await TabCacheManager.initCache();
-    if (!currentCache) return;
-    
-    // Use TabCacheManager to pin the tab (this will now unpin any other pinned tabs)
-    const updatedCache = await TabCacheManager.pinTab(currentCache, tabId);
-    
-    // Update the tabs state with the updated tabs (one pinned, others unpinned)
-    setTabs(updatedCache.tabs);
-    
-    // Set the pinned tab as active
-    setActiveTabId(tabId);
-  };
-  
-  const handleUnpinTab = async (tabId: string) => {
-    console.log('Unpinning tab:', tabId);
-    
-    // Get current cache
-    const currentCache = await TabCacheManager.initCache();
-    if (!currentCache) return;
-    
-    // Use TabCacheManager to unpin the tab
-    const updatedCache = await TabCacheManager.unpinTab(currentCache, tabId);
-    
-    // Update the tabs state with the unpinned tab
-    setTabs(updatedCache.tabs);
-  };
-
-  // Add a function to sort tabs with pinned tabs first
-  const sortTabs = (tabs: Tab[]): Tab[] => {
-    // Return tabs in their original order (creation order)
-    // We no longer sort by pinned status, we just use CSS to highlight pinned tabs
-    return [...tabs];
-  };
-
-  // Add a method to synchronize the cache
-  const syncCache = async () => {
-    console.log('Synchronizing cache...');
-    
     try {
-      // Use TabCacheManager to synchronize the cache
-      const syncedCache = await TabCacheManager.syncCache();
+      console.log(`Pinning tab ${tabId}`);
       
-      if (syncedCache) {
-        console.log('Cache synchronized successfully:', {
-          tabCount: syncedCache.tabs.length,
-          activeTabId: syncedCache.activeTabId
-        });
+      // First, unpin any previously pinned tabs
+      const pinnedTabs = tabs.filter(tab => tab.pinned);
+      for (const pinnedTab of pinnedTabs) {
+        if (pinnedTab.id !== tabId) {
+          console.log(`Unpinning previously pinned tab ${pinnedTab.id}`);
+          // Update local state first for immediate UI feedback
+          setTabs(prevTabs => prevTabs.map(tab => 
+            tab.id === pinnedTab.id ? { ...tab, pinned: false } : tab
+          ));
+        }
+      }
+      
+      // Pin the selected tab in local state
+      setTabs(prevTabs => prevTabs.map(tab => 
+        tab.id === tabId ? { ...tab, pinned: true } : tab
+      ));
+      
+      // Update the cache
+      const cache = await TabCacheManager.initCache();
+      if (cache) {
+        const updatedCache = await TabCacheManager.pinTab(cache, tabId);
+        console.log(`Tab ${tabId} pinned successfully in cache`);
         
-        // Update the tabs state with the synchronized cache
-        setTabs(syncedCache.tabs);
+        // Sort tabs to ensure pinned tab appears first
+        const sortedTabs = sortTabs([...tabs.map(tab => 
+          tab.id === tabId ? { ...tab, pinned: true } : 
+          pinnedTabs.some(pt => pt.id === tab.id) ? { ...tab, pinned: false } : tab
+        )]);
         
-        // Update the active tab ID
-        setActiveTabId(syncedCache.activeTabId);
+        setTabs(sortedTabs);
         
-        // Load attachments for the active tab
-        const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
-        if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
-          loadAttachmentsForTab(activeTab.id);
+        // Set this tab as the active tab
+        setActiveTabId(tabId);
+        
+        // Request a sync to ensure other instances are updated
+        await chrome.runtime.sendMessage({ type: 'REQUEST_SYNC' });
+        
+        // Verify the tab was actually pinned in the cache
+        const refreshedCache = await TabCacheManager.initCache();
+        const pinnedTab = refreshedCache?.tabs.find(t => t.pinned);
+        if (pinnedTab?.id !== tabId) {
+          console.warn(`Pin verification failed: Expected ${tabId} to be pinned, but found ${pinnedTab?.id || 'none'}`);
+        } else {
+          console.log(`Pin verification successful: Tab ${tabId} is pinned in cache`);
         }
       }
     } catch (error) {
-      console.error('Failed to synchronize cache:', error);
+      console.error(`Failed to pin tab ${tabId}:`, error);
+    }
+  };
+  
+  const handleUnpinTab = async (tabId: string) => {
+    try {
+      console.log(`Unpinning tab ${tabId}`);
+      
+      // Unpin the tab in local state first for immediate UI feedback
+      setTabs(prevTabs => prevTabs.map(tab => 
+        tab.id === tabId ? { ...tab, pinned: false } : tab
+      ));
+      
+      // Update the cache
+      const cache = await TabCacheManager.initCache();
+      if (cache) {
+        const updatedCache = await TabCacheManager.unpinTab(cache, tabId);
+        console.log(`Tab ${tabId} unpinned successfully in cache`);
+        
+        // Sort tabs to update order
+        const sortedTabs = sortTabs([...tabs.map(tab => 
+          tab.id === tabId ? { ...tab, pinned: false } : tab
+        )]);
+        
+        setTabs(sortedTabs);
+        
+        // Request a sync to ensure other instances are updated
+        await chrome.runtime.sendMessage({ type: 'REQUEST_SYNC' });
+        
+        // Verify the tab was actually unpinned in the cache
+        const refreshedCache = await TabCacheManager.initCache();
+        const stillPinned = refreshedCache?.tabs.find(t => t.id === tabId && t.pinned);
+        if (stillPinned) {
+          console.warn(`Unpin verification failed: Tab ${tabId} is still pinned in cache`);
+        } else {
+          console.log(`Unpin verification successful: Tab ${tabId} is not pinned in cache`);
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to unpin tab ${tabId}:`, error);
     }
   };
 
-  // Add a method to handle visibility changes
+  const sortTabs = (tabs: Tab[]): Tab[] => {
+    console.log('Sorting tabs with pinned tabs first');
+    
+    // Sort tabs with pinned tabs first, then by last edited time (newest first)
+    return tabs.sort((a, b) => {
+      // Pinned tabs come first
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      
+      // If both are pinned or both are not pinned, sort by last edited time
+      const aTime = new Date(a.lastEdited).getTime();
+      const bTime = new Date(b.lastEdited).getTime();
+      return bTime - aTime; // Newest first
+    });
+  };
+
+  // Effect to sync cache when visibility changes
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Extension became visible, synchronizing cache...');
-        syncCache();
+    if (isVisible) {
+      console.log('Tab became visible, syncing cache...');
+      syncCache();
+    }
+  }, [isVisible]);
+
+  // Register storage change listener for real-time sync
+  useEffect(() => {
+    // Track last sync time to prevent rapid successive syncs
+    let lastSyncTime = 0;
+    const MIN_SYNC_INTERVAL = 1000; // 1 second minimum between syncs
+    
+    // Handler for storage changes from other tabs/pages
+    const handleStorageChange = (event: StorageChangeEvent) => {
+      console.log('Storage change detected:', event);
+      
+      // Debounce rapid successive storage changes
+      const now = Date.now();
+      if (now - lastSyncTime < MIN_SYNC_INTERVAL) {
+        console.log(`Debouncing storage change (last sync was ${(now - lastSyncTime)}ms ago)`);
+        return;
       }
+      lastSyncTime = now;
+      
+      // Skip if this is from our own instance
+      if (event.instanceId === TabCacheManager['INSTANCE_ID']) {
+        console.log('Ignoring storage change from our own instance');
+        return;
+      }
+      
+      // If there are conflicts, show the conflict resolution dialog
+      if (event.conflicts && event.conflicts.length > 0) {
+        console.log('Conflicts detected:', event.conflicts);
+        setConflictingTabs(event.conflicts as Tab[]);
+        setShowConflictDialog(true);
+        return;
+      }
+      
+      // Otherwise, just sync the cache
+      syncCache();
     };
     
-    // Add event listener for visibility changes
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Register the listener
+    TabCacheManager.registerStorageChangeListener(handleStorageChange);
     
-    // Synchronize cache on mount
-    syncCache();
-    
-    // Clean up event listener on unmount
+    // Clean up on unmount
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      TabCacheManager.unregisterStorageChangeListener(handleStorageChange);
     };
   }, []);
+  
+  /**
+   * Synchronize the cache when the extension is closed
+   * This ensures that changes made on one page are reflected on other pages
+   */
+  const syncCache = async () => {
+    try {
+      console.log('Syncing cache before extension close...');
+      
+      // Save any pending changes first
+      const activeTab = tabs.find(tab => tab.id === activeTabId);
+      if (activeTab && activeTab.syncStatus === 'pending') {
+        console.log('Saving pending changes in active tab before sync');
+        
+        // Create a note object from the tab
+        const note: Partial<Note> = {
+          title: activeTab.title || 'Untitled',
+          content: activeTab.content,
+          version: activeTab.version || 0,
+          createdAt: activeTab.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          attachments: activeTab.loadedAttachments
+        };
+        
+        // Add id only if it exists
+        if (activeTab.noteId) {
+          note.id = activeTab.noteId;
+        }
+        
+        // Save the note
+        await handleSave(activeTab.id, note as Note);
+      }
+      
+      // Clean up duplicate attachments
+      const cache = await TabCacheManager.initCache();
+      if (cache) {
+        await TabCacheManager.cleanupDuplicateAttachments(cache);
+      }
+      
+      // Request a sync from the background script
+      await chrome.runtime.sendMessage({ type: 'REQUEST_SYNC' });
+      console.log('Cache sync requested from background script');
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to sync cache:', error);
+      return false;
+    }
+  };
+
+  // Handle conflict resolution
+  const resolveConflict = async (tabId: string, resolution: 'keep-local' | 'keep-remote' | 'merge') => {
+    try {
+      // Find the conflicting tab
+      const conflictingTab = conflictingTabs.find(tab => tab.id === tabId);
+      
+      if (!conflictingTab) {
+        console.error(`Conflicting tab with ID ${tabId} not found`);
+        return;
+      }
+      
+      // Get the remote cache
+      const remoteCache = await TabCacheManager.initCache();
+      
+      if (!remoteCache) {
+        console.error('Remote cache not found during conflict resolution');
+        return;
+      }
+      
+      // Find the remote tab
+      const remoteTab = remoteCache.tabs.find(tab => tab.id === tabId);
+      
+      if (!remoteTab) {
+        console.error(`Remote tab with ID ${tabId} not found`);
+        return;
+      }
+      
+      // Resolve the conflict based on the selected resolution
+      let resolvedTab: Tab;
+      
+      switch (resolution) {
+        case 'keep-local':
+          // Keep the local version
+          resolvedTab = {
+            ...conflictingTab,
+            hasConflict: false,
+            conflictInfo: {
+              ...conflictingTab.conflictInfo!,
+              resolved: true
+            },
+            localVersion: Math.max(conflictingTab.localVersion || 0, remoteTab.localVersion || 0) + 1
+          };
+          break;
+          
+        case 'keep-remote':
+          // Keep the remote version
+          resolvedTab = {
+            ...remoteTab as Tab,
+            hasConflict: false,
+            conflictInfo: {
+              ...conflictingTab.conflictInfo!,
+              resolved: true
+            },
+            localVersion: Math.max(conflictingTab.localVersion || 0, remoteTab.localVersion || 0) + 1
+          };
+          break;
+          
+        case 'merge':
+          // Simple merge strategy: concatenate content with a separator
+          resolvedTab = {
+            ...conflictingTab,
+            content: `${conflictingTab.content}\n\n--- MERGED CONTENT ---\n\n${remoteTab.content}`,
+            hasConflict: false,
+            conflictInfo: {
+              ...conflictingTab.conflictInfo!,
+              resolved: true
+            },
+            localVersion: Math.max(conflictingTab.localVersion || 0, remoteTab.localVersion || 0) + 1
+          };
+          break;
+        
+        default:
+          console.error(`Unknown resolution strategy: ${resolution}`);
+          return;
+      }
+      
+      // Update the tabs array
+      setTabs(prevTabs => prevTabs.map(tab => 
+        tab.id === resolvedTab.id ? resolvedTab : tab
+      ));
+      
+      // Remove from conflicting tabs list
+      setConflictingTabs(prev => prev.filter(tab => tab.id !== tabId));
+      
+      // If no more conflicts, hide the dialog
+      if (conflictingTabs.length <= 1) {
+        setShowConflictDialog(false);
+      }
+      
+      // Save to cache
+      const updatedCache: TabCache = {
+        tabs: tabs.map(tab => tab.id === resolvedTab.id ? resolvedTab : tab) as CacheTab[],
+        activeTabId,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await TabCacheManager.saveCache(updatedCache);
+      
+    } catch (error) {
+      console.error('Failed to resolve conflict:', error);
+    }
+  };
+
+  // Render conflict resolution dialog
+  const renderConflictDialog = () => {
+    if (!showConflictDialog || tabs.length === 0) {
+      return null;
+    }
+    
+    return (
+      <div className="conflict-dialog">
+        <h3>Conflicting Changes Detected</h3>
+        <p>Changes to the following tabs were made in another window:</p>
+        
+        <ul>
+          {conflictingTabs.map(tab => (
+            <li key={tab.id}>
+              <div>
+                <strong>{tab.title}</strong>
+                <p>Last edited locally: {new Date(tab.lastEdited).toLocaleString()}</p>
+                {tab.conflictInfo && (
+                  <p>Conflicting changes from: {new Date(tab.conflictInfo.timestamp).toLocaleString()}</p>
+                )}
+              </div>
+              
+              <div className="conflict-actions">
+                <button onClick={() => resolveConflict(tab.id, 'keep-local')}>
+                  Keep My Version
+                </button>
+                <button onClick={() => resolveConflict(tab.id, 'keep-remote')}>
+                  Use Other Version
+                </button>
+                <button onClick={() => resolveConflict(tab.id, 'merge')}>
+                  Merge Both
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
 
   return (
     <div className="tab-manager">
@@ -1448,8 +1540,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         tabTitle={tabs.find(tab => tab.id === confirmationState.tabId)?.title || ''}
         onConfirm={handleSaveAndClose}
         onCancel={handleCloseWithoutSaving}
-        onClose={() => setConfirmationState({ isOpen: false, tabId: '', hasUnsavedChanges: false })}
+        onClose={() => setConfirmationState({ isOpen: false, tabId: '', tabTitle: '', action: '' })}
       />
+      
+      {renderConflictDialog()}
     </div>
   );
 });

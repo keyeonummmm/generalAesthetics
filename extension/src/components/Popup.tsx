@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import TabManager from './TabManager';
+import React, { useState, useEffect, useRef } from 'react';
+import TabManager, { TabManagerRef } from './TabManager';
 import { SaveButton } from './SaveButton';
 import { ActionButton } from './ActionButton';
 import Menu from './Menu';
@@ -10,8 +10,7 @@ import { Note } from '../lib/DBProxy';
 import { AttachmentMenu } from './AttachmentMenu';
 import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
-import { TabManagerRef } from './TabManager';
-import { shadowRootRef } from '../content';
+import { useVisibilityChange } from '../hooks/useVisibilityChange';
 import { processImage, ImageProcessingOptions } from '../lib/imageProcessor';
 import { createLazyLoadableImage } from '../lib/imageProcessor';
 
@@ -34,6 +33,10 @@ const Popup: React.FC = () => {
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
+  const tabManagerRef = useRef<TabManagerRef>(null);
+  const isVisible = useVisibilityChange();
+  const previousVisibilityRef = useRef(true);
+
   // Initialize theme when component mounts
   useEffect(() => {
     ThemeManager.setTheme(ThemeManager.getCurrentTheme());
@@ -49,6 +52,37 @@ const Popup: React.FC = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  // Handle visibility changes
+  useEffect(() => {
+    // If visibility changed from visible to hidden, sync the cache
+    if (previousVisibilityRef.current && !isVisible) {
+      console.log('Extension visibility changed to hidden, syncing cache...');
+      if (tabManagerRef.current) {
+        // Sync the cache and request a background sync
+        (async () => {
+          try {
+            await tabManagerRef.current?.syncCache();
+            // Request an immediate background sync to ensure changes are propagated
+            await chrome.runtime.sendMessage({ type: 'REQUEST_SYNC' });
+            console.log('Cache sync completed before extension close');
+          } catch (error) {
+            console.error('Failed to sync cache before extension close:', error);
+          }
+        })();
+      }
+    } else if (!previousVisibilityRef.current && isVisible) {
+      // Extension became visible again, refresh the cache
+      console.log('Extension became visible, refreshing cache...');
+      if (tabManagerRef.current) {
+        // Request a background sync to get the latest changes
+        chrome.runtime.sendMessage({ type: 'REQUEST_SYNC' });
+      }
+    }
+    
+    // Update previous visibility
+    previousVisibilityRef.current = isVisible;
+  }, [isVisible]);
 
   const handleUnsavedChanges = (status: boolean) => {
     setHasUnsavedChanges(status);
@@ -206,8 +240,6 @@ const Popup: React.FC = () => {
       });
     }
   };
-
-  const tabManagerRef = React.useRef<TabManagerRef | null>(null);
 
   return (
     <div className="popup-container">
