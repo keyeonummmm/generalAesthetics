@@ -5,6 +5,7 @@ import { Attachment } from '../lib/Attachment';
 import '../styles/components/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
 import { TabCacheManager, Tab as CacheTab, TabCache, AttachmentReference } from '../lib/TabCacheManager';
+import { TabAssociationManager } from '../lib/TabAssociationManager';
 
 interface Tab {
   id: string;
@@ -465,11 +466,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       setConfirmationState({
         isOpen: true,
         tabId,
-        hasUnsavedChanges
+        hasUnsavedChanges: true
       });
     } else {
-      console.log('No unsaved changes detected, closing tab immediately');
-      // No unsaved changes, close immediately
+      // No unsaved changes, close the tab immediately
+      console.log('Tab has no unsaved changes, closing immediately');
       closeTab(tabId);
     }
   };
@@ -659,6 +660,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         }
       }
     }
+
+    // Clean up tab associations when a tab is closed
+    await TabAssociationManager.cleanupTabAssociations(tabId);
   };
 
   const addTab = (note?: Note, forceNew: boolean = false) => {
@@ -679,6 +683,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       console.log(`Note ${note?.id} is already open in tab ${existingTab.id}, setting as active`);
       setActiveTabId(existingTab.id);
       
+      // Associate this tab with the current page
+      updateTabAssociations(existingTab.id);
+      
       // Ensure attachments are loaded if they exist but aren't loaded yet
       if (note && 
           note.attachments && 
@@ -698,7 +705,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       const emptyTabIndex = tabs.findIndex(tab => 
         tab.isNew && !tab.title && !tab.content && !tab.noteId && (!tab.attachments || tab.attachments.length === 0)
       );
-
+      
       if (emptyTabIndex >= 0) {
         // Reuse an empty tab
         const updatedTabs = [...tabs];
@@ -715,7 +722,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             isNew: false,
             version: note.version,
             noteId: note.id,
-            syncStatus: 'synced' as const, // Explicitly set to synced for notes from DB
+            syncStatus: 'synced', // Explicitly set to synced for notes from DB
             lastEdited: new Date().toISOString(),
             pinned: false // Ensure the tab is not pinned by default
           };
@@ -723,6 +730,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         
         setTabs(updatedTabs);
         setActiveTabId(tabToUpdate.id);
+        
+        // Associate the tab with the current page
+        updateTabAssociations(tabToUpdate.id);
         
         // Explicitly load attachments for the tab if it has any
         if (note && note.attachments && note.attachments.length > 0) {
@@ -754,8 +764,15 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       pinned: false // Ensure new tabs are never pinned by default
     };
 
-    setTabs(prevTabs => [...prevTabs, newTab]);
+    setTabs((prevTabs) => {
+      const updatedTabs = [...prevTabs, newTab];
+      return updatedTabs;
+    });
+    
     setActiveTabId(newTabId);
+    
+    // Associate the new tab with the current page
+    updateTabAssociations(newTabId);
     
     // Explicitly load attachments for the new tab if it has any
     if (note && note.attachments && note.attachments.length > 0) {
@@ -1012,7 +1029,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   }));
 
   const handleTabClick = (tabId: string) => {
+    console.log(`Switching to tab: ${tabId}`);
     setActiveTabId(tabId);
+    
+    // Associate this tab with the current page
+    updateTabAssociations(tabId);
     
     // Load attachments for the tab when it becomes active
     const tab = tabs.find(tab => tab.id === tabId);
@@ -1021,16 +1042,44 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
   };
 
+  // Function to update tab associations
+  const updateTabAssociations = async (tabId: string) => {
+    try {
+      console.log(`Updating associations for tab ${tabId}`);
+      // Send a message to the background script to associate this tab with the current page
+      chrome.runtime.sendMessage({ 
+        type: 'ASSOCIATE_TAB',
+        tabId
+      }, (response: { success: boolean, error?: string } | undefined) => {
+        if (response && response.success) {
+          console.log(`Successfully associated tab ${tabId} with current page`);
+        } else {
+          console.error(`Failed to associate tab ${tabId} with current page:`, response?.error);
+          
+          // Fall back to direct association
+          TabAssociationManager.associateTabWithCurrentPage(tabId)
+            .then(() => TabAssociationManager.updateGlobalActiveTab(tabId))
+            .then(() => console.log(`Successfully associated tab ${tabId} with current page (fallback)`))
+            .catch(err => console.error(`Failed to associate tab ${tabId} with current page (fallback):`, err));
+        }
+      });
+    } catch (error) {
+      console.error(`Failed to update associations for tab ${tabId}:`, error);
+    }
+  };
+  
   // Unified tab update function
   const updateTabState = (
     tabId: string, 
     updates: Partial<Tab>,
-    shouldNotifyChange = true
+    shouldNotifyChange = true,
+    shouldUpdateAssociations = true // New parameter to control association updates
   ) => {
     setTabs(prevTabs => prevTabs.map(tab =>
       tab.id === tabId ? { 
         ...tab, 
         ...updates,
+        lastEdited: new Date().toISOString(), // Always update the lastEdited time
         noteId: tab.noteId // Preserve the existing noteId
       } : tab
     ));
@@ -1047,20 +1096,25 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         );
       }
     }
+    
+    // Update the tab associations when content is changed
+    if (shouldUpdateAssociations) {
+      updateTabAssociations(tabId);
+    }
   };
 
   // Update handlers using unified update function
   const handleTitleChange = (tabId: string, title: string) => {
     updateTabState(tabId, {
       title,
-      syncStatus: 'pending' as const
+      syncStatus: 'pending'
     });
   };
-
+  
   const handleContentChange = (tabId: string, content: string) => {
     updateTabState(tabId, {
       content,
-      syncStatus: 'pending' as const
+      syncStatus: 'pending'
     });
   };
 
@@ -1097,7 +1151,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             attachments: updatedTab.attachments,
             loadedAttachments: [...(tab.loadedAttachments || []), attachment],
             version: updatedNote.version,
-            syncStatus: 'synced' as const
+            syncStatus: 'synced'
           });
         }
       } else {
@@ -1105,15 +1159,14 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         // and add the full attachment to loadedAttachments
         const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
         if (updatedTab) {
-          setTabs(prevTabs => prevTabs.map(t => 
-            t.id === tabId ? { 
-              ...t, 
-              attachments: updatedTab.attachments,
-              loadedAttachments: [...(t.loadedAttachments || []), attachment]
-            } : t
-          ));
+          updateTabState(tabId, {
+            attachments: updatedTab.attachments,
+            loadedAttachments: [...(tab.loadedAttachments || []), attachment],
+          });
         }
       }
+      
+      // No need to call TabAssociationManager methods here as updateTabState already does that
     } catch (error) {
       console.error('Failed to add attachment:', error);
     }
@@ -1136,25 +1189,13 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     // Update tabs with new attachment references and remove from loadedAttachments
     const updatedTab = updatedCache.tabs.find(t => t.id === tabId);
     if (updatedTab) {
-      setTabs(prevTabs => prevTabs.map(t => {
-        if (t.id === tabId) {
-          return {
-            ...t,
-            attachments: updatedTab.attachments,
-            loadedAttachments: (t.loadedAttachments || []).filter(a => a.id !== attachment.id)
-          };
-        }
-        return t;
-      }));
+      updateTabState(tabId, {
+        attachments: updatedTab.attachments,
+        loadedAttachments: (tabs.find(t => t.id === tabId)?.loadedAttachments || [])
+          .filter(a => a.id !== attachment.id)
+      }, true);
       
-      // Update parent components about the change
-      onContentChange(
-        tabId,
-        updatedTab.title,
-        updatedTab.content,
-        updatedTab.version,
-        updatedTab.noteId
-      );
+      // No need to call TabAssociationManager methods here as updateTabState already does that
     }
   };
 
@@ -1307,6 +1348,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     setTabs(updatedCache.tabs);
   };
 
+  // Add a function to check if a tab is pinned
+  const isPinned = (tabId: string): boolean => {
+    const tab = tabs.find(tab => tab.id === tabId);
+    return tab?.pinned || false;
+  };
+
   // Add a function to sort tabs with pinned tabs first
   const sortTabs = (tabs: Tab[]): Tab[] => {
     // Return tabs in their original order (creation order)
@@ -1319,27 +1366,54 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     console.log('Synchronizing cache...');
     
     try {
-      // Use TabCacheManager to synchronize the cache
-      const syncedCache = await TabCacheManager.syncCache();
-      
-      if (syncedCache) {
-        console.log('Cache synchronized successfully:', {
-          tabCount: syncedCache.tabs.length,
-          activeTabId: syncedCache.activeTabId
-        });
-        
-        // Update the tabs state with the synchronized cache
-        setTabs(syncedCache.tabs);
-        
-        // Update the active tab ID
-        setActiveTabId(syncedCache.activeTabId);
-        
-        // Load attachments for the active tab
-        const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
-        if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
-          loadAttachmentsForTab(activeTab.id);
+      // Send a message to the background script to sync tabs
+      chrome.runtime.sendMessage({ 
+        type: 'SYNC_TABS'
+      }, async (response: { success: boolean, syncedCache?: TabCache, error?: string }) => {
+        if (response && response.success && response.syncedCache) {
+          const syncedCache = response.syncedCache;
+          console.log('Cache synchronized successfully via background script:', {
+            tabCount: syncedCache.tabs.length,
+            activeTabId: syncedCache.activeTabId
+          });
+          
+          // Update the tabs state with the synchronized cache
+          setTabs(syncedCache.tabs);
+          
+          // Update the active tab ID
+          setActiveTabId(syncedCache.activeTabId);
+          
+          // Load attachments for the active tab
+          const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
+          if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
+            loadAttachmentsForTab(activeTab.id);
+          }
+        } else {
+          console.error('Failed to sync tabs via background script:', response?.error);
+          
+          // Fall back to direct synchronization
+          const syncedCache = await TabCacheManager.syncCache();
+          
+          if (syncedCache) {
+            console.log('Cache synchronized successfully via fallback:', {
+              tabCount: syncedCache.tabs.length,
+              activeTabId: syncedCache.activeTabId
+            });
+            
+            // Update the tabs state with the synchronized cache
+            setTabs(syncedCache.tabs);
+            
+            // Update the active tab ID
+            setActiveTabId(syncedCache.activeTabId);
+            
+            // Load attachments for the active tab
+            const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
+            if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
+              loadAttachmentsForTab(activeTab.id);
+            }
+          }
         }
-      }
+      });
     } catch (error) {
       console.error('Failed to synchronize cache:', error);
     }
@@ -1350,7 +1424,18 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         console.log('Extension became visible, synchronizing cache...');
-        syncCache();
+        // Send a message to the background script to sync tabs
+        chrome.runtime.sendMessage({ 
+          type: 'TAB_VISIBILITY_CHANGE',
+          isVisible: true
+        }, (response: { success: boolean, syncedCache?: TabCache, error?: string } | undefined) => {
+          if (response && response.success) {
+            console.log('Tabs synchronized after visibility change');
+            syncCache();
+          } else {
+            console.error('Failed to sync tabs after visibility change:', response?.error);
+          }
+        });
       }
     };
     

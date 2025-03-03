@@ -38,6 +38,8 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 import { NotesDB } from './lib/notesDB';
+import { TabCacheManager } from './lib/TabCacheManager';
+import { TabAssociationManager } from './lib/TabAssociationManager';
 
 // Consolidated message handling
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -47,6 +49,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: !!url, url, error: url ? undefined : 'No URL found' });
     });
     return true; // Keep message channel open for async response
+  }
+  
+  if (message.type === 'SYNC_TABS') {
+    // Sync tabs across pages
+    TabCacheManager.syncCache()
+      .then(syncedCache => {
+        sendResponse({ success: true, syncedCache });
+      })
+      .catch(error => {
+        console.error('Failed to sync tabs:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep message channel open for async response
+  }
+  
+  if (message.type === 'TAB_VISIBILITY_CHANGE' && message.isVisible) {
+    // Handle tab becoming visible
+    TabCacheManager.syncCache()
+      .then(syncedCache => {
+        sendResponse({ success: true, syncedCache });
+      })
+      .catch(error => {
+        console.error('Failed to sync tabs on visibility change:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep message channel open for async response
+  }
+  
+  if (message.type === 'ASSOCIATE_TAB') {
+    const { tabId } = message;
+    if (tabId) {
+      TabAssociationManager.associateTabWithCurrentPage(tabId)
+        .then(() => {
+          TabAssociationManager.updateGlobalActiveTab(tabId)
+            .then(() => {
+              sendResponse({ success: true });
+            })
+            .catch(error => {
+              console.error('Failed to update global active tab:', error);
+              sendResponse({ success: false, error: error.message });
+            });
+        })
+        .catch(error => {
+          console.error('Failed to associate tab with page:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep message channel open for async response
+    }
   }
 
   if (message.type === 'CAPTURE_SCREENSHOT') {

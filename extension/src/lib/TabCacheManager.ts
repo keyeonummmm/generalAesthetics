@@ -1,4 +1,5 @@
 import { Attachment } from './Attachment';
+import { TabAssociationManager } from './TabAssociationManager';
 
 // Define interfaces for our cache structure
 export interface Tab {
@@ -564,19 +565,26 @@ export class TabCacheManager {
     const tabIndex = updatedTabs.findIndex(tab => tab.id === tabId);
     
     if (tabIndex >= 0) {
-      // Set the pinned property to false
+      const timestamp = new Date().toISOString();
+      
+      // Set the pinned property to false and update lastEdited
       updatedTabs[tabIndex] = {
         ...updatedTabs[tabIndex],
-        pinned: false
+        pinned: false,
+        lastEdited: timestamp // Update lastEdited timestamp for recency-based selection
       };
+      
+      // Don't change the active tab here - this will be determined by the association system
+      // after we update the association state in the component
       
       const updatedCache = {
         ...cache,
         tabs: updatedTabs,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: timestamp
       };
       
       await this.saveCache(updatedCache);
+      console.log(`Unpinned tab ${tabId} and updated lastEdited timestamp`);
       return updatedCache;
     }
     
@@ -640,14 +648,25 @@ export class TabCacheManager {
         console.log('Updated cache to ensure only one tab is pinned');
       }
       
-      // Determine which tab should be active
-      // Prioritize the pinned tab
+      // Determine which tab should be active based on the 3-layer priority system
       let newActiveTabId = latestCache.activeTabId;
+      
+      // Layer 1: Prioritize the pinned tab (highest priority)
       if (pinnedTabs.length > 0) {
         // Get the pinned tab (should be only one now)
         const pinnedTab = pinnedTabs[0];
         newActiveTabId = pinnedTab.id;
-        console.log(`Setting pinned tab ${newActiveTabId} as active`);
+        console.log(`LAYER 1: Setting pinned tab ${newActiveTabId} as active`);
+      } else {
+        // Layer 2 & 3: Check for page-associated tab or use global active tab
+        const associatedTabId = await TabAssociationManager.getActiveTabForCurrentPage(latestCache.tabs);
+        if (associatedTabId) {
+          newActiveTabId = associatedTabId;
+          console.log(`LAYER 2/3: Setting tab ${newActiveTabId} as active based on page association or global state`);
+          
+          // Update the global active tab in TabAssociationManager
+          await TabAssociationManager.updateGlobalActiveTab(associatedTabId);
+        }
       }
       
       // Update the active tab ID if needed
