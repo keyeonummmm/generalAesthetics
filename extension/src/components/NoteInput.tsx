@@ -65,17 +65,25 @@ const NoteInput: React.FC<NoteInputProps> = ({
     }
   }, [title, content]);
 
-  const handleTitleInput = () => {
+  const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    
     if (titleRef.current) {
       onTitleChange(titleRef.current.textContent || '');
     }
   };
 
-  const handleContentInput = () => {
+  const handleContentInput = (e: React.FormEvent<HTMLDivElement>) => {
+    
     if (contentRef.current) {
       onContentChange(contentRef.current.textContent || '');
     }
   };
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {};
+  const handleMouseDown = (e: React.MouseEvent) => {};
+  const handleClick = (e: React.MouseEvent) => {};
+  const handleFocus = (e: React.FocusEvent) => {};
+  const handleBlur = (e: React.FocusEvent) => {};
 
   return (
     <div className="note-input">
@@ -84,6 +92,11 @@ const NoteInput: React.FC<NoteInputProps> = ({
         className="title-input-seamless"
         contentEditable
         onInput={handleTitleInput}
+        onKeyDown={handleKeyDown}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         data-placeholder="Title"
         suppressContentEditableWarning
       ></div>
@@ -93,6 +106,11 @@ const NoteInput: React.FC<NoteInputProps> = ({
         className="content-input-seamless"
         contentEditable
         onInput={handleContentInput}
+        onKeyDown={handleKeyDown}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         data-placeholder="Start typing your note here..."
         suppressContentEditableWarning
       ></div>

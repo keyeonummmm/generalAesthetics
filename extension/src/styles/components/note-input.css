@@ -16,6 +16,8 @@
   height: 100%;
   padding: 20px;
   background-color: transparent;
+  position: relative;
+  z-index: 1;
 }
 
 /* Title input styles */
@@ -25,11 +27,12 @@
   margin-bottom: 10px;
   font-size: 1.5rem;
   font-weight: bold;
-  color: #333;
   background-color: transparent;
   border: none;
   outline: none;
   min-height: 40px;
+  position: relative;
+  z-index: 2;
 }
 
 /* Content input styles */
@@ -39,13 +42,14 @@
   padding: 10px 0;
   font-size: 1rem;
   line-height: 1.5;
-  color: #333;
   background-color: transparent;
   border: none;
   outline: none;
   min-height: 200px;
   overflow-y: auto;
   white-space: pre-wrap;
+  position: relative;
+  z-index: 2;
 }
 
 /* Placeholder styles using data-placeholder attribute */

@@ -97,6 +97,9 @@ export function hideExtensionUI() {
     
     // Update visibility state
     isInterfaceVisible = false;
+    
+    // Remove the event capture when UI is hidden
+    removeEventCapture();
   }
 }
 
@@ -118,7 +121,167 @@ export function showExtensionUI() {
     
     // Update visibility state
     isInterfaceVisible = true;
+    
+    // Add the event capture when UI is shown
+    setupEventCapture();
   }
+}
+
+// Function to capture events and prevent them from reaching the host page
+function setupEventCapture() {
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Instead of capturing all events, we'll add a boundary event handler
+  // This will only prevent events from leaving our extension UI
+  document.addEventListener('keydown', preventHostPageInterference, true);
+  document.addEventListener('keyup', preventHostPageInterference, true);
+  document.addEventListener('keypress', preventHostPageInterference, true);
+  
+  // Create a focus trap to keep focus within the extension UI
+  createFocusTrap(container);
+}
+
+// Function to prevent events from interfering with the host page
+// This only stops events that are not originating from our extension
+function preventHostPageInterference(e: Event) {
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Only stop propagation if the event is not coming from our extension
+  // and our extension is visible
+  if (isInterfaceVisible && !container.contains(e.target as Node)) {
+    // Don't stop events within our extension
+    return;
+  }
+  
+  // For events originating in our extension, let them propagate normally
+  // within our extension, but don't let them affect the host page
+  if (isInterfaceVisible && container.contains(e.target as Node)) {
+    // Let the event propagate within our extension
+    // We'll handle stopping propagation at the container boundary
+    return;
+  }
+}
+
+// Function to create a focus trap for the extension UI
+function createFocusTrap(container: HTMLElement) {
+  // Create invisible elements to trap focus
+  const startTrap = document.createElement('div');
+  startTrap.tabIndex = 0;
+  startTrap.style.position = 'absolute';
+  startTrap.style.opacity = '0';
+  startTrap.style.pointerEvents = 'none';
+  startTrap.setAttribute('aria-hidden', 'true');
+  startTrap.className = 'focus-trap-start';
+  
+  const endTrap = document.createElement('div');
+  endTrap.tabIndex = 0;
+  endTrap.style.position = 'absolute';
+  endTrap.style.opacity = '0';
+  endTrap.style.pointerEvents = 'none';
+  endTrap.setAttribute('aria-hidden', 'true');
+  endTrap.className = 'focus-trap-end';
+  
+  // Add the trap elements to the container
+  container.insertBefore(startTrap, container.firstChild);
+  container.appendChild(endTrap);
+  
+  // Add event listeners to the trap elements
+  startTrap.addEventListener('focus', () => {
+    // Find the last focusable element in the container
+    const focusableElements = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusableElements.length > 0) {
+      (focusableElements[focusableElements.length - 1] as HTMLElement).focus();
+    } else {
+      // If no focusable elements, focus the container itself
+      container.focus();
+    }
+  });
+  
+  endTrap.addEventListener('focus', () => {
+    // Find the first focusable element in the container
+    const focusableElements = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusableElements.length > 0) {
+      (focusableElements[0] as HTMLElement).focus();
+    } else {
+      // If no focusable elements, focus the container itself
+      container.focus();
+    }
+  });
+  
+  // Add a boundary event handler to the container
+  // This prevents events from leaving our extension UI
+  container.addEventListener('keydown', (e) => {
+    // Don't stop propagation within our extension
+    // This allows typing in contentEditable elements
+    
+    // Only handle Tab key for focus trapping
+    if (e.key === 'Tab') {
+      // Get all focusable elements in the container
+      const focusableElements = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusableElements.length === 0) return;
+      
+      // Get the first and last focusable elements
+      const firstFocusableElement = focusableElements[0] as HTMLElement;
+      const lastFocusableElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+      
+      // If Shift+Tab is pressed and the first element is focused, move to the last element
+      if (e.shiftKey && document.activeElement === firstFocusableElement) {
+        e.preventDefault();
+        lastFocusableElement.focus();
+      }
+      // If Tab is pressed and the last element is focused, move to the first element
+      else if (!e.shiftKey && document.activeElement === lastFocusableElement) {
+        e.preventDefault();
+        firstFocusableElement.focus();
+      }
+    }
+  });
+  
+  // Add a boundary event handler to stop events at the container boundary
+  container.addEventListener('keydown', (e) => {
+    // Stop propagation at the container boundary to prevent
+    // events from reaching the host page
+    e.stopPropagation();
+  }, false); // Use bubbling phase, not capture phase
+}
+
+// Function to remove event capture
+function removeEventCapture() {
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Remove document-level event listeners
+  document.removeEventListener('keydown', preventHostPageInterference, true);
+  document.removeEventListener('keyup', preventHostPageInterference, true);
+  document.removeEventListener('keypress', preventHostPageInterference, true);
+  
+  // Remove focus trap elements
+  const startTrap = container.querySelector('.focus-trap-start');
+  const endTrap = container.querySelector('.focus-trap-end');
+  
+  if (startTrap) {
+    startTrap.remove();
+  }
+  
+  if (endTrap) {
+    endTrap.remove();
+  }
+}
+
+// Function to capture and stop propagation of events
+function captureEvent(e: Event) {
+  // Only stop propagation for events that should not reach the host page
+  // Don't interfere with normal input handling within our extension
+  const container = document.getElementById('ga-notes-root');
+  if (container && container.contains(e.target as Node)) {
+    // Let events propagate within our extension
+    return;
+  }
+  
+  // Stop propagation for events outside our extension
+  e.stopPropagation();
 }
 
 // Apply position and scale to the UI
@@ -538,6 +701,9 @@ async function injectApp() {
   
   // Setup drag and resize functionality
   setupDragAndResize();
+  
+  // Setup event capture to prevent events from reaching the host page
+  setupEventCapture();
   
   return appContainer;
 }
