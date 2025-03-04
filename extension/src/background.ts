@@ -100,52 +100,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'CAPTURE_SCREENSHOT') {
-    (async () => {
-      try {
-        console.log('Background: Starting screenshot capture:', message.screenshotType);
-        
-        if (message.screenshotType === 'visible') {
-          // Use PNG format for better quality and to avoid JPEG artifacts
-          // Our image processor will handle the conversion and compression
-          const captureData = await chrome.tabs.captureVisibleTab(
-            chrome.windows.WINDOW_ID_CURRENT,
-            { format: 'png' }
-          );
-          console.log('Background: Visible capture successful');
-          sendResponse({ success: true, screenshotData: captureData });
-        } else if (message.screenshotType === 'full') {
-          console.log('Background: Initializing section capture');
-          const activeTab = await chrome.tabs.query({ active: true, currentWindow: true });
-          if (!activeTab[0]?.id) {
-            throw new Error('No active tab found');
+    // First hide the UI in all tabs
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'HIDE_EXTENSION_UI' })
+            .catch(error => console.error('Failed to send hide UI message:', error));
+        }
+      });
+    });
+    
+    // Wait a moment to ensure UI is hidden
+    setTimeout(() => {
+      (async () => {
+        try {
+          console.log('Background: Starting screenshot capture:', message.screenshotType);
+          
+          if (message.screenshotType === 'visible') {
+            // Use PNG format for better quality and to avoid JPEG artifacts
+            // Our image processor will handle the conversion and compression
+            const captureData = await chrome.tabs.captureVisibleTab(
+              chrome.windows.WINDOW_ID_CURRENT,
+              { format: 'png' }
+            );
+            console.log('Background: Visible capture successful');
+            sendResponse({ success: true, screenshotData: captureData });
+          } else if (message.screenshotType === 'full') {
+            console.log('Background: Initializing section capture');
+            const activeTab = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!activeTab[0]?.id) {
+              throw new Error('No active tab found');
+            }
+
+            await chrome.scripting.executeScript({
+              target: { tabId: activeTab[0].id },
+              func: () => {
+                const event = new CustomEvent('init-screenshot-selection');
+                document.dispatchEvent(event);
+              }
+            });
+
+            chrome.runtime.onMessage.addListener(function listener(msg) {
+              if (msg.type === 'SELECTION_CAPTURE') {
+                chrome.runtime.onMessage.removeListener(listener);
+                sendResponse({ success: true, screenshotData: msg.data });
+              } else if (msg.type === 'SELECTION_CAPTURE_ERROR') {
+                chrome.runtime.onMessage.removeListener(listener);
+                sendResponse({ success: false, error: msg.error });
+              }
+            });
           }
-
-          await chrome.scripting.executeScript({
-            target: { tabId: activeTab[0].id },
-            func: () => {
-              const event = new CustomEvent('init-screenshot-selection');
-              document.dispatchEvent(event);
-            }
-          });
-
-          chrome.runtime.onMessage.addListener(function listener(msg) {
-            if (msg.type === 'SELECTION_CAPTURE') {
-              chrome.runtime.onMessage.removeListener(listener);
-              sendResponse({ success: true, screenshotData: msg.data });
-            } else if (msg.type === 'SELECTION_CAPTURE_ERROR') {
-              chrome.runtime.onMessage.removeListener(listener);
-              sendResponse({ success: false, error: msg.error });
-            }
+        } catch (error) {
+          console.error('Background: Screenshot capture failed:', error);
+          sendResponse({ 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error'
           });
         }
-      } catch (error) {
-        console.error('Background: Screenshot capture failed:', error);
-        sendResponse({ 
-          success: false, 
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    })();
+      })();
+    }, 100);
+    
     return true;
   }
 
@@ -179,6 +193,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       }
     })();
+    return true;
+  }
+
+  if (message.type === 'HIDE_EXTENSION_UI') {
+    // Forward the message to all tabs
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'HIDE_EXTENSION_UI' })
+            .catch(error => console.error('Failed to send hide UI message:', error));
+        }
+      });
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.type === 'SHOW_EXTENSION_UI') {
+    // Forward the message to all tabs
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'SHOW_EXTENSION_UI' })
+            .catch(error => console.error('Failed to send show UI message:', error));
+        }
+      });
+    });
+    sendResponse({ success: true });
     return true;
   }
 });

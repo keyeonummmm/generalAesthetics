@@ -4,14 +4,18 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.3);
+  background: transparent;
   cursor: crosshair;
   z-index: 999999;
+  pointer-events: all;
+  isolation: isolate;
 }
 
 /* Add new class for capture state */
 .screenshot-overlay.capturing {
-  background: transparent;
+  background: transparent !important;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .screenshot-selection {
@@ -19,12 +23,16 @@
   border: 2px solid #3498db;
   background: rgba(52, 152, 219, 0.1);
   pointer-events: none;
+  box-shadow: none;
+  clip-path: border-box;
 }
 
 /* Add new class for capture state */
 .screenshot-selection.capturing {
-  background: transparent;
-  border-color: transparent;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  opacity: 0 !important;
 }
 
 .screenshot-selection::after {
@@ -38,5 +46,6 @@
 }
 
 .screenshot-selection.capturing::after {
-  border-color: transparent;
+  border-color: transparent !important;
+  opacity: 0 !important;
 } 

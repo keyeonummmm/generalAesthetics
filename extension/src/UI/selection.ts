@@ -1,9 +1,18 @@
 import selectionStyles from '../styles/selection.css';
+import { hideExtensionUI as globalHideUI, showExtensionUI as globalShowUI } from '../content';
+
+// Keep track of active selection instances to prevent multiple overlays
+let activeSelectionInstance: ScreenshotSelection | null = null;
 
 // Add event listener for initialization
 document.addEventListener('init-screenshot-selection', () => {
   console.log('Selection: Received init event');
-  new ScreenshotSelection();
+  // Remove existing instance if there is one
+  if (activeSelectionInstance) {
+    activeSelectionInstance.cleanup();
+  }
+  // Create new instance
+  activeSelectionInstance = new ScreenshotSelection();
 });
 
 export class ScreenshotSelection {
@@ -25,6 +34,9 @@ export class ScreenshotSelection {
 
   private initialize() {
     console.log('Selection: Initializing selection UI');
+    // Remove any existing overlay elements first
+    this.removeExistingOverlays();
+    
     const style = document.createElement('style');
     style.textContent = selectionStyles;
     document.head.appendChild(style);
@@ -34,6 +46,14 @@ export class ScreenshotSelection {
     this.overlay.appendChild(this.selection);
     document.body.appendChild(this.overlay);
     this.bindEvents();
+  }
+
+  private removeExistingOverlays() {
+    // Remove any existing overlays to prevent multiple instances
+    const existingOverlays = document.querySelectorAll('.screenshot-overlay');
+    existingOverlays.forEach(overlay => {
+      overlay.remove();
+    });
   }
 
   private createOverlay(): HTMLDivElement {
@@ -86,6 +106,34 @@ export class ScreenshotSelection {
     return true;
   }
 
+  // Hide extension UI elements in the shadow DOM
+  private hideExtensionUI() {
+    // Use the global function from content.ts
+    globalHideUI();
+    
+    // Also hide any other extension elements that might be in the DOM
+    const extensionElements = document.querySelectorAll('[id^="general-aesthetics-"], [class^="ga-"]');
+    extensionElements.forEach(element => {
+      if (element instanceof HTMLElement) {
+        element.style.display = 'none';
+      }
+    });
+  }
+
+  // Restore extension UI elements
+  private showExtensionUI() {
+    // Use the global function from content.ts
+    globalShowUI();
+    
+    // Also show any other extension elements that were hidden
+    const extensionElements = document.querySelectorAll('[id^="general-aesthetics-"], [class^="ga-"]');
+    extensionElements.forEach(element => {
+      if (element instanceof HTMLElement) {
+        element.style.display = '';  // Reset to default display value
+      }
+    });
+  }
+
   private handleMouseUp = async () => {
     if (!this.isSelecting) return;
     this.isSelecting = false;
@@ -99,12 +147,14 @@ export class ScreenshotSelection {
       console.log('Selection: Starting area capture');
       const rect = this.selection.getBoundingClientRect();
       
+      // Hide extension UI before taking screenshot
+      this.hideExtensionUI();
+      
       // Add capturing classes right before screenshot
       this.overlay.classList.add('capturing');
       this.selection.classList.add('capturing');
       
-      // Small delay to ensure styles are applied
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Capture the entire visible tab first
       const response = await chrome.runtime.sendMessage({
@@ -166,20 +216,36 @@ export class ScreenshotSelection {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
+      // Show extension UI again
+      this.showExtensionUI();
+      
       // Remove capturing classes if cleanup hasn't happened yet
       this.overlay.classList.remove('capturing');
       this.selection.classList.remove('capturing');
-      this.cleanup();
+      
+      // Wait for fade-in animation to complete before cleanup
+      setTimeout(() => {
+        this.cleanup();
+      }, 300);
     }
   };
 
-  private cleanup() {
+  public cleanup() {
+    // Set the active instance to null
+    if (activeSelectionInstance === this) {
+      activeSelectionInstance = null;
+    }
+    
     const styles = document.querySelectorAll('style');
     styles.forEach(style => {
       if (style.textContent === selectionStyles) {
         style.remove();
       }
     });
-    this.overlay.remove();
+    
+    // Ensure overlay is removed
+    if (this.overlay && this.overlay.parentNode) {
+      this.overlay.remove();
+    }
   }
 }

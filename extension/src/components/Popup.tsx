@@ -11,7 +11,7 @@ import { AttachmentMenu } from './AttachmentMenu';
 import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
-import { shadowRootRef } from '../content';
+import { shadowRootRef, hideExtensionUI, showExtensionUI } from '../content';
 import { processImage, ImageProcessingOptions } from '../lib/imageProcessor';
 import { createLazyLoadableImage } from '../lib/imageProcessor';
 
@@ -115,6 +115,12 @@ const Popup: React.FC = () => {
     try {
       console.log(`Initiating ${type} screenshot capture`);
       
+      // Show loading indicator
+      setIsLoading(true);
+      
+      // Hide the extension UI before capture using the global function
+      await hideExtensionUI();
+      
       const response = await new Promise<{ success: boolean; screenshotData?: string; error?: string }>((resolve) => {
         const timeoutId = setTimeout(() => {
           resolve({ success: false, error: 'Capture timeout' });
@@ -128,6 +134,9 @@ const Popup: React.FC = () => {
           }
         );
       });
+      
+      // Show UI again using the global function
+      await showExtensionUI();
 
       if (!response.success || !response.screenshotData) {
         throw new Error(response.error || 'Failed to capture screenshot');
@@ -139,9 +148,6 @@ const Popup: React.FC = () => {
         quality: 85,
         progressive: true
       };
-      
-      // Show loading indicator
-      setIsLoading(true);
       
       // Process the image (convert to WebP, compress, and generate thumbnail)
       const processedImage = await processImage(response.screenshotData, processingOptions);

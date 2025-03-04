@@ -18,6 +18,45 @@ let root: ReturnType<typeof createRoot> | null = null;
 export let shadowRootRef: ShadowRoot | null = null;
 export let themeToggle: { toggle: () => Promise<void> } | null = null;
 
+// Add global functions to hide/show the extension UI
+export function hideExtensionUI() {
+  if (shadowRootRef) {
+    const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
+    if (rootElement) {
+      // Remove fade-out animation and hide immediately
+      rootElement.style.transition = 'none';
+      rootElement.style.display = 'none';
+    }
+    
+    // Also hide the container element
+    const container = document.getElementById('ga-notes-root');
+    if (container) {
+      // Remove fade-out animation and hide immediately
+      container.style.transition = 'none';
+      container.style.display = 'none';
+    }
+  }
+}
+
+export function showExtensionUI() {
+  if (shadowRootRef) {
+    const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
+    if (rootElement) {
+      // Make it visible immediately
+      rootElement.style.transition = 'none';
+      rootElement.style.display = 'block';
+    }
+    
+    // Also show the container element
+    const container = document.getElementById('ga-notes-root');
+    if (container) {
+      // Make it visible immediately
+      container.style.transition = 'none';
+      container.style.display = 'block';
+    }
+  }
+}
+
 function injectApp() {
   // Prevent multiple initializations
   if (isInitialized) {
@@ -118,8 +157,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const success = toggleInterface();
     sendResponse({ success });
   } else if (message.type === 'hideInterface') {
-    const success = toggleInterface(false); // Force hide
+    const success = toggleInterface(false);
     sendResponse({ success });
+  } else if (message.type === 'showInterface') {
+    const success = toggleInterface(true);
+    sendResponse({ success });
+  } else if (message.type === 'HIDE_EXTENSION_UI') {
+    hideExtensionUI();
+    sendResponse({ success: true });
+  } else if (message.type === 'SHOW_EXTENSION_UI') {
+    showExtensionUI();
+    sendResponse({ success: true });
   } else if (message.type === 'initScreenshotSelection') {
     new ScreenshotSelection();
     sendResponse({ success: true });

@@ -45,8 +45,13 @@ export const AttachmentMenu: React.FC<AttachmentMenuProps> = ({
   const handleScreenshotCapture = async (type: 'visible' | 'full') => {
     setIsLoading(true);
     setCaptureType('screenshot');
-    try {
+    try {      
+      // Wait a moment to ensure the UI updates before capture
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Perform the screenshot capture
       await onScreenshotCapture(type);
+      
       onClose();
     } catch (error) {
       console.error('Failed to capture screenshot:', error);
