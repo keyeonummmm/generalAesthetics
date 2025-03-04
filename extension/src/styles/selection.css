@@ -1,4 +1,14 @@
-.screenshot-overlay {
+/*
+ * Screenshot selection overlay styles
+ * These styles are for the screenshot selection functionality
+ * They use high z-index values to ensure they appear above all other elements
+ */
+
+/*
+ * Use specific class names with ga- prefix to avoid conflicts
+ * with the page's styles
+ */
+.ga-screenshot-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -12,13 +22,13 @@
 }
 
 /* Add new class for capture state */
-.screenshot-overlay.capturing {
+.ga-screenshot-overlay.capturing {
   background: transparent !important;
   pointer-events: none;
   opacity: 0;
 }
 
-.screenshot-selection {
+.ga-screenshot-selection {
   position: absolute;
   border: 2px solid #3498db;
   background: rgba(52, 152, 219, 0.1);
@@ -28,14 +38,14 @@
 }
 
 /* Add new class for capture state */
-.screenshot-selection.capturing {
+.ga-screenshot-selection.capturing {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
   opacity: 0 !important;
 }
 
-.screenshot-selection::after {
+.ga-screenshot-selection::after {
   content: '';
   position: absolute;
   top: -2px;
@@ -45,7 +55,7 @@
   border: 1px solid white;
 }
 
-.screenshot-selection.capturing::after {
+.ga-screenshot-selection.capturing::after {
   border-color: transparent !important;
   opacity: 0 !important;
-} 
+}

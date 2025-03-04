@@ -48,7 +48,7 @@ export class ScreenshotSelection {
 
   private removeExistingOverlays() {
     // Remove any existing overlays to prevent multiple instances
-    const existingOverlays = document.querySelectorAll('.screenshot-overlay');
+    const existingOverlays = document.querySelectorAll('.ga-screenshot-overlay');
     existingOverlays.forEach(overlay => {
       overlay.remove();
     });
@@ -56,13 +56,13 @@ export class ScreenshotSelection {
 
   private createOverlay(): HTMLDivElement {
     const overlay = document.createElement('div');
-    overlay.className = 'screenshot-overlay';
+    overlay.className = 'ga-screenshot-overlay';
     return overlay;
   }
 
   private createSelection(): HTMLDivElement {
     const selection = document.createElement('div');
-    selection.className = 'screenshot-selection';
+    selection.className = 'ga-screenshot-selection';
     return selection;
   }
 

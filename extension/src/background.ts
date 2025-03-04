@@ -40,6 +40,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 import { NotesDB } from './lib/notesDB';
 import { TabCacheManager } from './lib/TabCacheManager';
 import { TabAssociationManager } from './lib/TabAssociationManager';
+import { PositionScaleManager } from './lib/PositionScaleManager';
 
 // Consolidated message handling
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -223,6 +224,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  if (message.type === 'resetPosition') {
+    // Forward the message to the active tab
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'resetPosition' })
+          .then(response => {
+            sendResponse(response);
+          })
+          .catch(error => {
+            console.error('Failed to send reset position message:', error);
+            sendResponse({ success: false, error: error.message });
+          });
+      } else {
+        sendResponse({ success: false, error: 'No active tab found' });
+      }
+    });
+    return true;
+  }
+
+  if (message.type === 'getTabId') {
+    if (sender.tab && sender.tab.id) {
+      sendResponse({ tabId: sender.tab.id });
+    } else {
+      sendResponse({ tabId: -1, error: 'Could not determine tab ID' });
+    }
+    return true;
+  }
 });
 
 async function handleDBOperation(message: any, sendResponse: (response: any) => void) {
@@ -248,6 +277,43 @@ chrome.runtime.onSuspend.addListener(async () => {
     } catch (error) {
       console.error(`Failed to hide interface in tab ${tabId}:`, error);
     }
+  }
+});
+
+// Listen for tab removal to clean up position cache
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    console.log(`Tab removed: ${tabId}`);
+    
+    // Since we're now using tab IDs directly for position caching,
+    // we don't need to look up URLs anymore. We can just clear the position
+    // for the removed tab ID directly.
+    
+    // Send a message to clear the position cache for this tab ID
+    // This is a no-op if the tab is already closed, but helps ensure cleanup
+    try {
+      chrome.runtime.sendMessage({ 
+        type: 'clearPositionForTab', 
+        tabId 
+      });
+    } catch (error) {
+      // Tab is likely already closed, which is expected
+      console.log(`Could not send clearPositionForTab message: ${error}`);
+    }
+    
+    // Also handle any tab associations if needed
+    const associations = await TabAssociationManager.initAssociations();
+    const pageUrls = Object.keys(associations.pageToTab).filter(
+      pageUrl => associations.pageToTab[pageUrl] === tabId.toString()
+    );
+    
+    // Update associations as needed
+    for (const pageUrl of pageUrls) {
+      console.log(`Removing tab association for URL: ${pageUrl}`);
+      // Handle any other cleanup needed for tab associations
+    }
+  } catch (error) {
+    console.error('Error handling tab removal:', error);
   }
 });
 

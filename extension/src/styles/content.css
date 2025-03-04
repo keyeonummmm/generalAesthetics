@@ -1,3 +1,9 @@
+/* 
+ * Base container styles
+ * This file defines the main container and CSS variables
+ * All styles should be properly scoped to .ga-notes-container
+ */
+
 /* Reset styles for our container */
 .ga-notes-container {
   all: initial;
@@ -16,18 +22,21 @@
 
 /* Scope all theme variables to our container */
 .ga-notes-container {
-  --ga-light-bg: #f5f5dc;
+  /* Light Theme Colors */
+  --ga-light-bg: #f5f5dc;  /* Soft beige */
   --ga-light-text: #2c2c2c;
   --ga-light-border: #d4d4d4;
   --ga-light-hover: #2c2c2c;
   --ga-light-hover-text: #f5f5dc;
   
-  --ga-dark-bg: rgba(0, 0, 0, 0.85); 
+  /* Dark Theme Colors */
+  --ga-dark-bg: rgba(0, 0, 0, 0.85);  /* Translucent black */
   --ga-dark-text: #e6e6e6;
   --ga-dark-border: #404040;
   --ga-dark-hover: #e6e6e6;
   --ga-dark-hover-text: #2c2c2c;
   
+  /* Shared Variables */
   --ga-shadow-color: rgba(0, 0, 0, 0.1);
   --ga-transition-speed: 0.3s;
   --ga-border-radius: 8px;
@@ -56,7 +65,10 @@
   box-sizing: border-box;
 }
 
-/* Scope all component styles */
+/* 
+ * Base component styles scoped to our container
+ * More specific component styles are in the components directory
+ */
 .ga-notes-container .header {
   display: flex;
   align-items: center;
@@ -74,5 +86,3 @@
   cursor: pointer;
   transition: all var(--ga-transition-speed) ease;
 }
-
-/* Continue with all other styles, properly scoped */ 

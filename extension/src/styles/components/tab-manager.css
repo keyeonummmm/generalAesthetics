@@ -1,17 +1,27 @@
-.tab-manager {
+/*
+ * Tab manager component styles
+ * These styles should be properly scoped to avoid conflicts
+ */
+
+/*
+ * Use .ga-notes-container prefix for all styles to avoid conflicts
+ * with the page's styles
+ */
+
+.ga-notes-container .tab-manager {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.tab-list {
+.ga-notes-container .tab-list {
   display: flex;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-color);
   overflow-x: auto;
 }
 
-.tab {
+.ga-notes-container .tab {
   padding: 8px 16px;
   border-right: 1px solid var(--border-color);
   cursor: pointer;
@@ -25,34 +35,34 @@
   text-overflow: ellipsis;
 }
 
-.tab.active {
+.ga-notes-container .tab.active {
   background: var(--hover-bg);
   color: var(--hover-text);
 }
 
-.tab.pinned {
+.ga-notes-container .tab.pinned {
   background-color: rgba(0, 0, 0, 0.05);
   border-bottom: 2px solid #4285f4;
 }
 
-.tab.pinned.active {
+.ga-notes-container .tab.pinned.active {
   background: var(--hover-bg);
   color: var(--hover-text);
   border-bottom: 2px solid #4285f4;
 }
 
-.pin-indicator {
+.ga-notes-container .pin-indicator {
   font-size: 12px;
   margin-right: 4px;
 }
 
-.tab-actions {
+.ga-notes-container .tab-actions {
   display: flex;
   align-items: center;
   margin-left: auto;
 }
 
-.pin-tab {
+.ga-notes-container .pin-tab {
   padding: 2px 6px;
   background: transparent;
   border: none;
@@ -62,11 +72,11 @@
   line-height: 1;
 }
 
-.pin-tab:hover {
+.ga-notes-container .pin-tab:hover {
   color: #000;
 }
 
-.close-tab {
+.ga-notes-container .close-tab {
   padding: 2px 6px;
   background: transparent;
   border: none;
@@ -77,16 +87,16 @@
   margin-left: 4px;
 }
 
-.close-tab:hover {
+.ga-notes-container .close-tab:hover {
   color: #000;
 }
 
-.tab-content {
+.ga-notes-container .tab-content {
   flex: 1;
   overflow: auto;
 }
 
-.new-tab-button {
+.ga-notes-container .new-tab-button {
   padding: 4px 8px;
   background: transparent;
   border: none;
@@ -96,11 +106,11 @@
   line-height: 1;
 }
 
-.new-tab-button:hover {
+.ga-notes-container .new-tab-button:hover {
   color: #000;
 }
 
-.tab span {
+.ga-notes-container .tab span {
   max-width: 15ch;
   white-space: nowrap;
   overflow: hidden;
@@ -108,7 +118,7 @@
   display: inline-block;
 }
 
-.loading-attachments {
+.ga-notes-container .loading-attachments {
   display: inline-block;
   margin-left: 10px;
   font-size: 0.8rem;
@@ -129,7 +139,7 @@
 }
 
 /* Confirmation Dialog Styles */
-.confirmation-dialog-backdrop {
+.ga-notes-container .confirmation-dialog-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -137,113 +147,79 @@
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   z-index: 1000;
 }
 
-.confirmation-dialog {
-  background-color: #fff;
+.ga-notes-container .confirmation-dialog {
+  background-color: var(--bg-color);
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  width: 400px;
-  max-width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 400px;
   overflow: hidden;
-  animation: dialog-appear 0.2s ease-out;
 }
 
-@keyframes dialog-appear {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.ga-notes-container .confirmation-dialog-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.confirmation-dialog-header {
-  padding: 15px 20px;
-  background-color: #f7f7f7;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.confirmation-dialog-header h3 {
+.ga-notes-container .confirmation-dialog-header h3 {
   margin: 0;
   font-size: 18px;
-  color: #333;
+  font-weight: 500;
 }
 
-.close-dialog {
-  background: none;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: #666;
+.ga-notes-container .confirmation-dialog-content {
+  padding: 16px;
 }
 
-.close-dialog:hover {
-  color: #333;
+.ga-notes-container .confirmation-dialog-content p {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.confirmation-dialog-content {
-  padding: 20px;
-}
-
-.confirmation-dialog-content p {
-  margin: 0 0 10px;
-  color: #555;
-}
-
-.confirmation-dialog-actions {
-  padding: 0 20px 20px;
+.ga-notes-container .confirmation-dialog-actions {
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
-.dialog-btn {
+.ga-notes-container .confirmation-dialog-cancel {
   padding: 8px 16px;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
-  font-size: 14px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  font-size: 14px;
+  color: var(--text-color);
 }
 
-.cancel-btn {
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  color: #666;
-}
-
-.cancel-btn:hover {
-  background-color: #e0e0e0;
-}
-
-.confirm-btn {
-  background-color: #4285f4;
-  border: 1px solid #2b6abc;
+.ga-notes-container .confirmation-dialog-confirm {
+  padding: 8px 16px;
+  background-color: #e74c3c;
   color: white;
-}
-
-.confirm-btn:hover {
-  background-color: #3367d6;
-}
-
-.tab-content-input {
-  flex: 1;
-  padding: 10px;
   border: none;
-  resize: none !important;
-  font-size: 1rem;
-  line-height: 1.5;
-  min-height: 200px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.ga-notes-container .tab-content-input {
   width: 100%;
-  box-sizing: border-box;
+  height: 100%;
+  padding: 16px;
+  border: none;
   outline: none;
-  background-color: #fff;
-} 
+  resize: none;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: transparent;
+  color: var(--text-color);
+}

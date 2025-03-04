@@ -1,5 +1,15 @@
+/* 
+ * Note input component styles
+ * These styles should be properly scoped to avoid conflicts
+ */
+
+/* 
+ * Use .ga-notes-container prefix for all styles to avoid conflicts
+ * with the page's styles
+ */
+
 /* Seamless note input styles */
-.note-input {
+.ga-notes-container .note-input {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -9,7 +19,7 @@
 }
 
 /* Title input styles */
-.title-input-seamless {
+.ga-notes-container .title-input-seamless {
   width: 100%;
   padding: 10px 0;
   margin-bottom: 10px;
@@ -23,7 +33,7 @@
 }
 
 /* Content input styles */
-.content-input-seamless {
+.ga-notes-container .content-input-seamless {
   flex: 1;
   width: 100%;
   padding: 10px 0;
@@ -39,40 +49,40 @@
 }
 
 /* Placeholder styles using data-placeholder attribute */
-.title-input-seamless:empty:before,
-.content-input-seamless:empty:before {
+.ga-notes-container .title-input-seamless:empty:before,
+.ga-notes-container .content-input-seamless:empty:before {
   content: attr(data-placeholder);
   color: #aaa;
   font-style: italic;
 }
 
 /* Focus styles */
-.title-input-seamless:focus,
-.content-input-seamless:focus {
+.ga-notes-container .title-input-seamless:focus,
+.ga-notes-container .content-input-seamless:focus {
   outline: none;
 }
 
 /* Attachments container */
-.attachments-container {
+.ga-notes-container .attachments-container {
   margin-top: 20px;
   border-top: 1px solid #eee;
   padding-top: 10px;
 }
 
-.attachments-container h3 {
+.ga-notes-container .attachments-container h3 {
   font-size: 1.1rem;
   margin-bottom: 10px;
   color: #555;
 }
 
-.attachments-list {
+.ga-notes-container .attachments-list {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
 /* Loading indicator */
-.attachments-loading {
+.ga-notes-container .attachments-loading {
   margin: 10px 0;
   padding: 8px;
   background-color: #f8f9fa;
@@ -80,4 +90,4 @@
   color: #666;
   font-style: italic;
   text-align: center;
-} 
+}

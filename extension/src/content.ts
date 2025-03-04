@@ -7,6 +7,7 @@ import Popup from './components/Popup';
 import './styles/index.css';
 import { ScreenshotSelection } from './UI/selection';
 import { ThemeManager, createThemeToggle } from './UI/component';
+import { PositionScale, PositionScaleManager } from './lib/PositionScaleManager';
 
 // Establish connection with background script
 const port = chrome.runtime.connect({ name: 'content-script' });
@@ -18,46 +19,448 @@ let root: ReturnType<typeof createRoot> | null = null;
 export let shadowRootRef: ShadowRoot | null = null;
 export let themeToggle: { toggle: () => Promise<void> } | null = null;
 
+// Track drag and resize state
+let isDragging = false;
+let isResizing = false;
+let resizeDirection = '';
+let startX = 0;
+let startY = 0;
+let startWidth = 0;
+let startHeight = 0;
+let startTop = 0;
+let startLeft = 0;
+let startScale = 1;
+let currentPositionScale: PositionScale = PositionScaleManager.getDefaultPosition();
+
 // Add global functions to hide/show the extension UI
 export function hideExtensionUI() {
   if (shadowRootRef) {
+    // Hide the shadow root element
     const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
     if (rootElement) {
-      // Remove fade-out animation and hide immediately
       rootElement.style.transition = 'none';
       rootElement.style.display = 'none';
     }
     
-    // Also hide the container element
+    // Hide the container element
     const container = document.getElementById('ga-notes-root');
     if (container) {
-      // Remove fade-out animation and hide immediately
       container.style.transition = 'none';
       container.style.display = 'none';
     }
+    
+    // Hide the app container element
+    const appContainer = shadowRootRef.querySelector('.ga-notes-container') as HTMLElement;
+    if (appContainer) {
+      appContainer.style.transition = 'none';
+      appContainer.style.display = 'none';
+    }
+    
+    // Update visibility state
+    isInterfaceVisible = false;
   }
 }
 
 export function showExtensionUI() {
   if (shadowRootRef) {
+    // Show the shadow root element
     const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
     if (rootElement) {
-      // Make it visible immediately
       rootElement.style.transition = 'none';
       rootElement.style.display = 'block';
     }
     
-    // Also show the container element
+    // Show the container element
     const container = document.getElementById('ga-notes-root');
     if (container) {
-      // Make it visible immediately
       container.style.transition = 'none';
       container.style.display = 'block';
     }
+    
+    // Show the app container element
+    const appContainer = shadowRootRef.querySelector('.ga-notes-container') as HTMLElement;
+    if (appContainer) {
+      appContainer.style.transition = 'none';
+      appContainer.style.display = 'block';
+    }
+    
+    // Update visibility state
+    isInterfaceVisible = true;
   }
 }
 
-function injectApp() {
+// Apply position and scale to the UI
+function applyPositionAndScale(position: PositionScale) {
+  if (!shadowRootRef) return;
+  
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Ensure position is within viewport bounds
+  const minVisiblePortion = 50;
+  
+  // Calculate effective dimensions with scale
+  const effectiveWidth = position.width * position.scale;
+  const effectiveHeight = position.height * position.scale;
+  
+  // Constrain position to keep UI within viewport
+  let x = position.x;
+  let y = position.y;
+  
+  // Constrain horizontal position
+  x = Math.max(-effectiveWidth + minVisiblePortion, x);
+  x = Math.min(viewportWidth - minVisiblePortion, x);
+  
+  // Constrain vertical position
+  y = Math.max(-effectiveHeight + minVisiblePortion, y);
+  y = Math.min(viewportHeight - minVisiblePortion, y);
+  
+  // Apply position and size
+  container.style.position = 'fixed';
+  container.style.left = `${x}px`;
+  container.style.top = `${y}px`;
+  container.style.width = `${position.width}px`;
+  container.style.height = `${position.height}px`;
+  container.style.transform = `scale(${position.scale})`;
+  container.style.transformOrigin = 'top left';
+  container.style.zIndex = '9999';
+  
+  // Store current position and scale with constrained values
+  currentPositionScale = { 
+    ...position,
+    x,
+    y
+  };
+}
+
+// Save current position and scale to cache
+async function saveCurrentPosition() {
+  await PositionScaleManager.updatePositionForCurrentTab(currentPositionScale);
+}
+
+// Add event listeners for drag and resize
+function setupDragAndResize() {
+  const container = document.getElementById('ga-notes-root');
+  if (!container || !shadowRootRef) return;
+  
+  // Create resize handles
+  const directions = ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw'];
+  directions.forEach(dir => {
+    const handle = document.createElement('div');
+    handle.className = `resize-handle resize-${dir}`;
+    handle.style.position = 'absolute';
+    
+    // Position the handles
+    switch(dir) {
+      case 'n':
+        handle.style.top = '0';
+        handle.style.left = '0';
+        handle.style.right = '0';
+        handle.style.height = '5px';
+        handle.style.cursor = 'ns-resize';
+        break;
+      case 'e':
+        handle.style.top = '0';
+        handle.style.right = '0';
+        handle.style.bottom = '0';
+        handle.style.width = '5px';
+        handle.style.cursor = 'ew-resize';
+        break;
+      case 's':
+        handle.style.bottom = '0';
+        handle.style.left = '0';
+        handle.style.right = '0';
+        handle.style.height = '5px';
+        handle.style.cursor = 'ns-resize';
+        break;
+      case 'w':
+        handle.style.top = '0';
+        handle.style.left = '0';
+        handle.style.bottom = '0';
+        handle.style.width = '5px';
+        handle.style.cursor = 'ew-resize';
+        break;
+      case 'ne':
+        handle.style.top = '0';
+        handle.style.right = '0';
+        handle.style.width = '10px';
+        handle.style.height = '10px';
+        handle.style.cursor = 'ne-resize';
+        break;
+      case 'se':
+        handle.style.bottom = '0';
+        handle.style.right = '0';
+        handle.style.width = '10px';
+        handle.style.height = '10px';
+        handle.style.cursor = 'se-resize';
+        break;
+      case 'sw':
+        handle.style.bottom = '0';
+        handle.style.left = '0';
+        handle.style.width = '10px';
+        handle.style.height = '10px';
+        handle.style.cursor = 'sw-resize';
+        break;
+      case 'nw':
+        handle.style.top = '0';
+        handle.style.left = '0';
+        handle.style.width = '10px';
+        handle.style.height = '10px';
+        handle.style.cursor = 'nw-resize';
+        break;
+    }
+    
+    // Add resize event listeners
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isResizing = true;
+      resizeDirection = dir;
+      startX = e.clientX;
+      startY = e.clientY;
+      startWidth = container.offsetWidth;
+      startHeight = container.offsetHeight;
+      startTop = container.offsetTop;
+      startLeft = container.offsetLeft;
+      startScale = currentPositionScale.scale;
+      
+      document.addEventListener('mousemove', handleResize);
+      document.addEventListener('mouseup', stopResize);
+    });
+    
+    container.appendChild(handle);
+  });
+  
+  // Find the header element for drag functionality
+  const header = shadowRootRef.querySelector('.header') as HTMLElement;
+  if (header) {
+    // Make header draggable
+    header.style.cursor = 'move';
+    header.addEventListener('mousedown', (e) => {
+      // Ignore if clicking on buttons in the header
+      if ((e.target as HTMLElement).tagName === 'BUTTON' || 
+          (e.target as HTMLElement).closest('button')) {
+        return;
+      }
+      
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = container.offsetLeft;
+      startTop = container.offsetTop;
+      
+      document.addEventListener('mousemove', handleDrag);
+      document.addEventListener('mouseup', stopDrag);
+    });
+    
+    // Double click to reset position and scale
+    header.addEventListener('dblclick', async (e) => {
+      // Ignore if double-clicking on buttons in the header
+      if ((e.target as HTMLElement).tagName === 'BUTTON' || 
+          (e.target as HTMLElement).closest('button')) {
+        return;
+      }
+      
+      e.preventDefault();
+      const defaultPosition = await PositionScaleManager.resetToDefault();
+      applyPositionAndScale(defaultPosition);
+    });
+  }
+}
+
+// Handle resize event
+function handleResize(e: MouseEvent) {
+  if (!isResizing) return;
+  
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  e.preventDefault();
+  
+  const dx = e.clientX - startX;
+  const dy = e.clientY - startY;
+  
+  let newWidth = startWidth;
+  let newHeight = startHeight;
+  let newTop = startTop;
+  let newLeft = startLeft;
+  
+  // Calculate new dimensions based on resize direction
+  if (resizeDirection.includes('e')) {
+    newWidth = startWidth + dx;
+  }
+  if (resizeDirection.includes('s')) {
+    newHeight = startHeight + dy;
+  }
+  if (resizeDirection.includes('w')) {
+    newWidth = startWidth - dx;
+    newLeft = startLeft + dx;
+  }
+  if (resizeDirection.includes('n')) {
+    newHeight = startHeight - dy;
+    newTop = startTop + dy;
+  }
+  
+  // Apply minimum dimensions
+  const minWidth = 300;
+  const minHeight = 200;
+  
+  if (newWidth < minWidth) {
+    if (resizeDirection.includes('w')) {
+      newLeft = startLeft + (startWidth - minWidth);
+    }
+    newWidth = minWidth;
+  }
+  
+  if (newHeight < minHeight) {
+    if (resizeDirection.includes('n')) {
+      newTop = startTop + (startHeight - minHeight);
+    }
+    newHeight = minHeight;
+  }
+  
+  // Calculate scale based on size changes
+  let newScale = currentPositionScale.scale;
+  
+  // Calculate horizontal and vertical scale factors
+  const horizontalScaleFactor = newWidth / startWidth;
+  const verticalScaleFactor = newHeight / startHeight;
+  
+  // Use the appropriate scale factor based on which direction is being resized
+  if (resizeDirection.includes('e') || resizeDirection.includes('w')) {
+    newScale = startScale * horizontalScaleFactor;
+  } else if (resizeDirection.includes('n') || resizeDirection.includes('s')) {
+    newScale = startScale * verticalScaleFactor;
+  } else if (['ne', 'se', 'sw', 'nw'].includes(resizeDirection)) {
+    // For corners, use the larger of the two scale factors
+    newScale = startScale * Math.max(horizontalScaleFactor, verticalScaleFactor);
+  }
+  
+  // Limit scale to reasonable values
+  newScale = Math.max(0.5, Math.min(2, newScale));
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Ensure the container stays within viewport bounds
+  const minVisiblePortion = 50;
+  
+  // Constrain horizontal position
+  newLeft = Math.max(-newWidth * newScale + minVisiblePortion, newLeft);
+  newLeft = Math.min(viewportWidth - minVisiblePortion, newLeft);
+  
+  // Constrain vertical position
+  newTop = Math.max(-newHeight * newScale + minVisiblePortion, newTop);
+  newTop = Math.min(viewportHeight - minVisiblePortion, newTop);
+  
+  // Update container style
+  container.style.width = `${newWidth}px`;
+  container.style.height = `${newHeight}px`;
+  container.style.top = `${newTop}px`;
+  container.style.left = `${newLeft}px`;
+  container.style.transform = `scale(${newScale})`;
+  
+  // Update current position
+  currentPositionScale.width = newWidth;
+  currentPositionScale.height = newHeight;
+  currentPositionScale.x = newLeft;
+  currentPositionScale.y = newTop;
+  currentPositionScale.scale = newScale;
+}
+
+// Stop resize event
+function stopResize() {
+  if (!isResizing) return;
+  
+  isResizing = false;
+  resizeDirection = '';
+  
+  document.removeEventListener('mousemove', handleResize);
+  document.removeEventListener('mouseup', stopResize);
+  
+  // Save the new position and scale
+  saveCurrentPosition();
+}
+
+// Handle drag event
+function handleDrag(e: MouseEvent) {
+  if (!isDragging) return;
+  
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  e.preventDefault();
+  
+  const dx = e.clientX - startX;
+  const dy = e.clientY - startY;
+  
+  let newLeft = startLeft + dx;
+  let newTop = startTop + dy;
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Get container dimensions (accounting for scale)
+  const containerWidth = container.offsetWidth * currentPositionScale.scale;
+  const containerHeight = container.offsetHeight * currentPositionScale.scale;
+  
+  // Ensure the container stays within viewport bounds
+  // Allow at least 50px of the container to remain visible
+  const minVisiblePortion = 50;
+  
+  // Constrain horizontal position
+  newLeft = Math.max(-containerWidth + minVisiblePortion, newLeft);
+  newLeft = Math.min(viewportWidth - minVisiblePortion, newLeft);
+  
+  // Constrain vertical position
+  newTop = Math.max(-containerHeight + minVisiblePortion, newTop);
+  newTop = Math.min(viewportHeight - minVisiblePortion, newTop);
+  
+  // Update container style
+  container.style.left = `${newLeft}px`;
+  container.style.top = `${newTop}px`;
+  
+  // Update current position
+  currentPositionScale.x = newLeft;
+  currentPositionScale.y = newTop;
+}
+
+// Stop drag event
+function stopDrag() {
+  if (!isDragging) return;
+  
+  isDragging = false;
+  
+  document.removeEventListener('mousemove', handleDrag);
+  document.removeEventListener('mouseup', stopDrag);
+  
+  // Save the new position and scale
+  saveCurrentPosition();
+}
+
+// Handle scale change
+function handleScaleChange(newScale: number) {
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Limit scale to reasonable values
+  newScale = Math.max(0.5, Math.min(2, newScale));
+  
+  container.style.transform = `scale(${newScale})`;
+  currentPositionScale.scale = newScale;
+  
+  // Save the new position and scale
+  saveCurrentPosition();
+}
+
+async function injectApp() {
   // Prevent multiple initializations
   if (isInitialized) {
     console.debug('App already initialized');
@@ -94,35 +497,66 @@ function injectApp() {
   root.render(React.createElement(Popup));
 
   isInitialized = true;
+  
+  // Get position and scale from cache for current tab
+  const position = await PositionScaleManager.getPositionForCurrentTab();
+  
+  // Apply position and scale
+  applyPositionAndScale(position);
+  
+  // Setup drag and resize functionality
+  setupDragAndResize();
+  
   return appContainer;
 }
 
 // Add a function to get current visibility state
 function getInterfaceVisibility(): boolean {
+  // Check if either the root container or app container are visible
+  const rootContainer = document.getElementById('ga-notes-root');
+  const rootContainerVisible = rootContainer ? rootContainer.style.display !== 'none' : false;
+  
   if (shadowRootRef) {
     const appContainer = shadowRootRef.querySelector('.ga-notes-container');
     if (appContainer instanceof HTMLElement) {
-      return appContainer.style.display !== 'none';
+      const appContainerVisible = appContainer.style.display !== 'none';
+      // If either container is visible, the interface should be considered visible
+      return rootContainerVisible || appContainerVisible;
     }
   }
-  return false;
+  
+  return rootContainerVisible;
 }
 
-function toggleInterface(forceState?: boolean) {
+async function toggleInterface(forceState?: boolean) {
   try {
     if (!isInitialized) {
-      const appContainer = injectApp();
+      const appContainer = await injectApp();
       if (appContainer) {
         appContainer.style.display = 'block';
+        // Also make sure the root container is visible
+        const rootContainer = document.getElementById('ga-notes-root');
+        if (rootContainer) {
+          rootContainer.style.display = 'block';
+        }
         isInterfaceVisible = true;
       }
     } else if (shadowRootRef) {
       const appContainer = shadowRootRef.querySelector('.ga-notes-container');
+      // Also get the root container
+      const rootContainer = document.getElementById('ga-notes-root');
+      
+      // Check actual current visibility if forceState isn't provided
+      const currentVisibility = getInterfaceVisibility();
+      isInterfaceVisible = forceState !== undefined ? forceState : !currentVisibility;
+      
+      // Update both container elements
       if (appContainer instanceof HTMLElement) {
-        // Check actual current visibility if forceState isn't provided
-        const currentVisibility = getInterfaceVisibility();
-        isInterfaceVisible = forceState !== undefined ? forceState : !currentVisibility;
         appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
+      }
+      
+      if (rootContainer) {
+        rootContainer.style.display = isInterfaceVisible ? 'block' : 'none';
       }
     }
     
@@ -151,6 +585,16 @@ export function toggleTheme() {
   });
 }
 
+// Handle port disconnection (page closed or navigated away)
+port.onDisconnect.addListener(() => {
+  console.log('Content script disconnected');
+  // Clear position cache when page is closed
+  PositionScaleManager.clearPositionForCurrentTab().catch(error => {
+    console.error('Failed to clear position cache:', error);
+  });
+  PositionScaleManager.clearTabId();
+});
+
 // Add to message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'toggleInterface') {
@@ -174,8 +618,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'toggleTheme') {
     toggleTheme();
     sendResponse({ success: true });
+  } else if (message.type === 'resetPosition') {
+    PositionScaleManager.resetToDefault().then(defaultPosition => {
+      applyPositionAndScale(defaultPosition);
+      sendResponse({ success: true });
+    });
+    return true;
+  } else if (message.type === 'clearPositionForTab') {
+    // Check if this message is for our tab
+    PositionScaleManager.initTabId().then(currentTabId => {
+      if (message.tabId === currentTabId) {
+        PositionScaleManager.clearPositionForCurrentTab().catch(error => {
+          console.error('Failed to clear position cache:', error);
+        });
+      }
+      sendResponse({ success: true });
+    });
+    return true;
   }
   return true;
+});
+
+// Add window resize handler to adjust position when window size changes
+window.addEventListener('resize', () => {
+  // Only adjust position if the UI is using default position (not manually moved)
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Check if the position is close to the default position
+  const defaultPosition = PositionScaleManager.getDefaultPosition();
+  const rightEdgePosition = defaultPosition.x + defaultPosition.width;
+  const currentRightEdgePosition = parseInt(container.style.left || '0') + parseInt(container.style.width || '0');
+  
+  // If the right edge is within 50px of the default right edge position,
+  // assume it's at the default position and adjust it
+  if (Math.abs(window.innerWidth - currentRightEdgePosition) < 50) {
+    const newPosition = PositionScaleManager.getDefaultPosition();
+    applyPositionAndScale(newPosition);
+    saveCurrentPosition();
+  }
 });
 
 export {};

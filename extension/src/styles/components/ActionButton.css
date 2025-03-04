@@ -1,0 +1,32 @@
+/*
+ * ActionButton component styles
+ * These styles should be properly scoped to avoid conflicts
+ */
+
+/*
+ * Use .ga-notes-container prefix for all styles to avoid conflicts
+ * with the page's styles
+ */
+.ga-notes-container .action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.ga-notes-container .action-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.ga-notes-container .action-button .icon {
+  font-size: 16px;
+}
+
+.ga-notes-container .action-button.warning .icon {
+  color: #e74c3c;
+}

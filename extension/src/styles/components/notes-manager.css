@@ -1,131 +1,174 @@
-.notes-manager-overlay {
+/*
+ * Notes manager component styles
+ * These styles should be properly scoped to avoid conflicts
+ */
+
+/*
+ * Use .ga-notes-container prefix for all styles to avoid conflicts
+ * with the page's styles
+ */
+
+.ga-notes-container .notes-manager-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 10000;
 }
 
-.notes-manager {
-  background: var(--background-color);
+.ga-notes-container .notes-manager {
+  background-color: var(--bg-color);
   border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.notes-manager-header {
-  padding: 1rem;
+.ga-notes-container .notes-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ga-notes-container .notes-manager-title {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.ga-notes-container .notes-manager-close {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+
+.ga-notes-container .notes-manager-close:hover {
+  opacity: 1;
+}
+
+.ga-notes-container .notes-manager-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ga-notes-container .notes-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.ga-notes-container .note-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.ga-notes-container .note-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.ga-notes-container .note-item-header {
+  padding: 12px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.notes-list {
-  padding: 1rem;
-  overflow-y: auto;
-  max-height: calc(80vh - 60px);
+.ga-notes-container .note-item-title {
+  font-weight: 500;
+  font-size: 16px;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.note-item {
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  margin-bottom: 0.5rem;
+.ga-notes-container .note-item-content {
+  padding: 12px;
+  font-size: 14px;
+  color: var(--text-color);
+  opacity: 0.8;
+  max-height: 100px;
+  overflow: hidden;
+  display: -webkit-box;
+  line-clamp: 4;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.ga-notes-container .note-item-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-color);
+  opacity: 0.6;
 }
 
-.note-item-content {
-  flex: 1;
-  cursor: pointer;
-}
-
-.note-item h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: calc(100% - 40px);
-}
-
-.note-item p {
-  margin: 0 0 0.5rem 0;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: calc(100% - 40px);
-  line-height: 1.2;
-}
-
-.note-item small {
-  color: var(--text-tertiary);
-  font-size: 0.8rem;
-}
-
-.note-item-actions {
-  position: relative;
-}
-
-.menu-button {
-  background: none;
+.ga-notes-container .menu-button {
+  background: transparent;
   border: none;
-  padding: 0.5rem;
   cursor: pointer;
-  position: relative;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-color);
+  opacity: 0.7;
 }
 
-.menu-button svg {
-  width: 20px;
-  height: 20px;
+.ga-notes-container .menu-button:hover {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
-.menu-dropdown {
+.ga-notes-container .menu-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ga-notes-container .menu-dropdown {
   position: absolute;
-  right: 0;
-  top: 100%;
-  background: var(--background-color);
+  top: 40px;
+  right: 8px;
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  min-width: 150px;
 }
 
-.menu-dropdown button {
+.ga-notes-container .menu-dropdown button {
   display: block;
   width: 100%;
-  padding: 0.5rem 1rem;
   text-align: left;
+  padding: 8px 12px;
+  background: transparent;
   border: none;
-  background: none;
   cursor: pointer;
+  color: var(--text-color);
 }
 
-.menu-dropdown button:hover {
-  background: var(--hover-color);
+.ga-notes-container .menu-dropdown button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
 }
-
-.no-notes {
-  text-align: center;
-  padding: 2rem;
-  color: var(--text-secondary);
-}
-
-.close-button {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.5rem;
-} 

@@ -1,8 +1,125 @@
+/* 
+ * CSS Import Order - Important for Cascade Resolution
+ * 1. Base styles (content.css) - Contains container and theme variables
+ * 2. Component styles - Specific UI components
+ * 3. Selection styles - Screenshot selection overlay
+ * 
+ * This order ensures proper CSS cascade with more specific styles overriding general ones
+ */
 @import './content.css';
 
+/* Component styles */
 @import './components/components.css';
 @import './components/attachment-menu.css';
 @import './components/attachment-operation.css';
 @import './components/notes-manager.css';
 @import './components/tab-manager.css';
+@import './components/note-input.css';
+@import './components/ActionButton.css';
+
+/* Selection overlay styles */
 @import './selection.css';
+
+/* 
+ * Root container styles 
+ * These styles will override any conflicting styles from content.css
+ * due to the cascade order (content.css is imported first)
+ */
+#ga-notes-root {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 400px;
+  height: 600px;
+  z-index: 9999;
+  transform-origin: top left;
+  transition: transform 0.2s ease;
+}
+
+/* Resize handles */
+.ga-notes-container .resize-handle {
+  position: absolute;
+  z-index: 10000;
+  background-color: transparent;
+}
+
+.ga-notes-container .resize-handle:hover {
+  background-color: rgba(0, 120, 215, 0.3);
+}
+
+.ga-notes-container .resize-n, .ga-notes-container .resize-s {
+  height: 5px;
+  left: 0;
+  right: 0;
+  cursor: ns-resize;
+}
+
+.ga-notes-container .resize-e, .ga-notes-container .resize-w {
+  width: 5px;
+  top: 0;
+  bottom: 0;
+  cursor: ew-resize;
+}
+
+.ga-notes-container .resize-n {
+  top: 0;
+}
+
+.ga-notes-container .resize-e {
+  right: 0;
+}
+
+.ga-notes-container .resize-s {
+  bottom: 0;
+}
+
+.ga-notes-container .resize-w {
+  left: 0;
+}
+
+.ga-notes-container .resize-ne, .ga-notes-container .resize-nw, .ga-notes-container .resize-se, .ga-notes-container .resize-sw {
+  width: 10px;
+  height: 10px;
+}
+
+.ga-notes-container .resize-ne {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+
+.ga-notes-container .resize-nw {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+
+.ga-notes-container .resize-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+.ga-notes-container .resize-sw {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+
+/* Draggable header */
+.ga-notes-container .header {
+  cursor: move;
+  user-select: none;
+}
+
+.ga-notes-container .drag-handle-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  opacity: 0.5;
+  font-size: 14px;
+}
+
+.ga-notes-container .drag-handle-indicator span {
+  transform: rotate(90deg);
+}

@@ -207,19 +207,28 @@ const Popup: React.FC = () => {
 
   return (
     <div className="popup-container">
-      <div className="header">
+      <div className="header" title="Drag to move (Double-click to reset position)">
         <div className="header-left">
           <ActionButton 
             type="edit" 
             onClick={() => setIsNotesManagerOpen(true)} 
             title="View Notes" 
           />
+          <div className="drag-handle-indicator">
+            <span>☰</span>
+          </div>
         </div>
         <div className="header-right">
-          <ActionButton type="menu" onClick={() => setIsMenuOpen(true)} title="Menu" />
+          <ActionButton 
+            type="menu" 
+            onClick={() => setIsMenuOpen(!isMenuOpen)} 
+            title="Menu" 
+          />
           <ActionButton 
             type="close" 
-            onClick={() => {}}
+            onClick={() => {
+              chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' });
+            }}
             title="Close"
             hasUnsavedChanges={hasUnsavedChanges}
           />
@@ -287,4 +296,4 @@ const Popup: React.FC = () => {
   );
 };
 
-export default Popup; 
+export default Popup;
