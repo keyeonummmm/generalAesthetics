@@ -29,7 +29,7 @@
 /* Popup Container */
 .ga-notes-container .popup-container {
   width: 300px;
-  min-height: 400px;
+  min-height: 550px;
   background: var(--bg-color);
   color: var(--text-color);
   border-radius: var(--ga-border-radius);

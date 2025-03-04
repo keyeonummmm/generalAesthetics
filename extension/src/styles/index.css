@@ -29,8 +29,8 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  width: 400px;
-  height: 600px;
+  width: 300px;
+  height: 550px;
   z-index: 9999;
   transform-origin: top left;
   transition: transform 0.2s ease;

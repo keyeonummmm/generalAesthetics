@@ -198,29 +198,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'HIDE_EXTENSION_UI') {
-    // Forward the message to all tabs
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach(tab => {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, { type: 'HIDE_EXTENSION_UI' })
-            .catch(error => console.error('Failed to send hide UI message:', error));
-        }
+    // Handle this asynchronously
+    broadcastToActiveTabs({ type: 'HIDE_EXTENSION_UI' })
+      .then(results => {
+        console.log(`Sent hide UI message to ${results.length} tabs`, 
+          `(${results.filter(r => r.success).length} successful)`);
       });
-    });
     sendResponse({ success: true });
     return true;
   }
   
   if (message.type === 'SHOW_EXTENSION_UI') {
-    // Forward the message to all tabs
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach(tab => {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, { type: 'SHOW_EXTENSION_UI' })
-            .catch(error => console.error('Failed to send show UI message:', error));
-        }
+    // Handle this asynchronously
+    broadcastToActiveTabs({ type: 'SHOW_EXTENSION_UI' })
+      .then(results => {
+        console.log(`Sent show UI message to ${results.length} tabs`, 
+          `(${results.filter(r => r.success).length} successful)`);
       });
-    });
     sendResponse({ success: true });
     return true;
   }
@@ -270,14 +264,22 @@ chrome.runtime.onSuspend.addListener(async () => {
   // Get all tabs where our content script is running
   const tabs = Array.from(loadedTabs);
   
-  // Send hide message to all active content scripts
-  for (const tabId of tabs) {
-    try {
-      await chrome.tabs.sendMessage(tabId, { type: 'hideInterface' });
-    } catch (error) {
-      console.error(`Failed to hide interface in tab ${tabId}:`, error);
-    }
-  }
+  // Send hide message to all active content scripts with timeout
+  const promises = tabs.map(tabId => {
+    // Set a timeout to avoid hanging
+    const timeoutPromise = new Promise<{success: false, error: string}>((resolve) => 
+      setTimeout(() => resolve({ success: false, error: 'Timeout' }), 1000)
+    );
+    
+    // Use our helper
+    return Promise.race([
+      sendMessageToTab(tabId, { type: 'hideInterface' }), 
+      timeoutPromise
+    ]);
+  });
+  
+  // Wait for all promises to resolve
+  await Promise.all(promises);
 });
 
 // Listen for tab removal to clean up position cache
@@ -318,5 +320,37 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 console.log('Background script initialized successfully');
+
+// Helper function to safely send messages to tabs
+async function sendMessageToTab(tabId: number, message: any) {
+  if (!loadedTabs.has(tabId)) {
+    return { success: false, error: 'Tab not loaded' };
+  }
+  
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, message);
+    return { success: true, response };
+  } catch (error) {
+    console.log(`Failed to send message to tab ${tabId}:`, error);
+    // If connection fails, remove from loaded tabs
+    loadedTabs.delete(tabId);
+    return { success: false, error };
+  }
+}
+
+// Helper function to send messages to all active tabs
+async function broadcastToActiveTabs(message: any) {
+  const tabs = await chrome.tabs.query({});
+  const results = [];
+  
+  for (const tab of tabs) {
+    const tabId = tab.id;
+    if (tabId !== undefined && loadedTabs.has(tabId)) {
+      results.push(await sendMessageToTab(tabId, message));
+    }
+  }
+  
+  return results;
+}
 
 export {}; // Keep module format 

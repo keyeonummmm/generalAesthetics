@@ -116,8 +116,28 @@ const Popup: React.FC = () => {
       // Show loading indicator
       setIsLoading(true);
       
-      // Hide the extension UI before capture using the global function
-      await hideExtensionUI();
+      // Try to hide the extension UI before capture
+      try {
+        // First try using the imported function
+        await hideExtensionUI();
+      } catch (hideError) {
+        console.warn('Failed to hide UI using direct function:', hideError);
+        // Fallback to message-based approach
+        try {
+          await chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' });
+        } catch (msgError) {
+          console.warn('Failed to hide UI using message:', msgError);
+          // Last resort: try direct DOM manipulation
+          try {
+            const container = document.getElementById('ga-notes-root');
+            if (container) {
+              container.style.display = 'none';
+            }
+          } catch (domError) {
+            console.error('All UI hiding methods failed:', domError);
+          }
+        }
+      }
       
       const response = await new Promise<{ success: boolean; screenshotData?: string; error?: string }>((resolve) => {
         const timeoutId = setTimeout(() => {
@@ -227,7 +247,19 @@ const Popup: React.FC = () => {
           <ActionButton 
             type="close" 
             onClick={() => {
-              chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' });
+              chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' })
+                .catch(error => {
+                  console.warn('Failed to send hide UI message:', error);
+                  // Fallback to direct DOM manipulation if message fails
+                  try {
+                    const container = document.getElementById('ga-notes-root');
+                    if (container) {
+                      container.style.display = 'none';
+                    }
+                  } catch (domError) {
+                    console.error('Failed to hide UI via DOM:', domError);
+                  }
+                });
             }}
             title="Close"
             hasUnsavedChanges={hasUnsavedChanges}

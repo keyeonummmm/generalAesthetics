@@ -10,7 +10,53 @@ import { ThemeManager, createThemeToggle } from './UI/component';
 import { PositionScale, PositionScaleManager } from './lib/PositionScaleManager';
 
 // Establish connection with background script
-const port = chrome.runtime.connect({ name: 'content-script' });
+let port = chrome.runtime.connect({ name: 'content-script' });
+let reconnectionAttempts = 0;
+const MAX_RECONNECTION_ATTEMPTS = 5;
+
+// Function to handle port reconnection
+function setupConnection() {
+  port = chrome.runtime.connect({ name: 'content-script' });
+  
+  // Handle port disconnection
+  port.onDisconnect.addListener(() => {
+    const lastError = chrome.runtime.lastError;
+    console.log('Content script disconnected', lastError ? `: ${lastError.message}` : '');
+    
+    // Attempt to reconnect if the disconnection wasn't due to navigation/tab close
+    // and we haven't exceeded max attempts
+    if (document.visibilityState === 'visible' && reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
+      reconnectionAttempts++;
+      console.log(`Attempting to reconnect (${reconnectionAttempts}/${MAX_RECONNECTION_ATTEMPTS})`);
+      setTimeout(setupConnection, 1000 * reconnectionAttempts); // Exponential backoff
+    } else if (reconnectionAttempts >= MAX_RECONNECTION_ATTEMPTS) {
+      console.log('Max reconnection attempts reached. Please refresh the page to restore functionality.');
+    } else {
+      // Clear position cache when page is closed
+      PositionScaleManager.clearPositionForCurrentTab().catch(error => {
+        console.error('Failed to clear position cache:', error);
+      });
+      PositionScaleManager.clearTabId();
+    }
+  });
+}
+
+// Initialize connection
+setupConnection();
+
+// Reset reconnection counter when the page becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    reconnectionAttempts = 0;
+    // Attempt to reconnect if needed
+    try {
+      port.postMessage({ type: 'ping' });
+    } catch (e) {
+      // If posting a message fails, connection is broken, try to reconnect
+      setupConnection();
+    }
+  }
+});
 
 // Track interface state
 let isInterfaceVisible = false;
@@ -49,13 +95,6 @@ export function hideExtensionUI() {
       container.style.display = 'none';
     }
     
-    // Hide the app container element
-    const appContainer = shadowRootRef.querySelector('.ga-notes-container') as HTMLElement;
-    if (appContainer) {
-      appContainer.style.transition = 'none';
-      appContainer.style.display = 'none';
-    }
-    
     // Update visibility state
     isInterfaceVisible = false;
   }
@@ -75,13 +114,6 @@ export function showExtensionUI() {
     if (container) {
       container.style.transition = 'none';
       container.style.display = 'block';
-    }
-    
-    // Show the app container element
-    const appContainer = shadowRootRef.querySelector('.ga-notes-container') as HTMLElement;
-    if (appContainer) {
-      appContainer.style.transition = 'none';
-      appContainer.style.display = 'block';
     }
     
     // Update visibility state
@@ -512,20 +544,9 @@ async function injectApp() {
 
 // Add a function to get current visibility state
 function getInterfaceVisibility(): boolean {
-  // Check if either the root container or app container are visible
+  // Check if the root container is visible
   const rootContainer = document.getElementById('ga-notes-root');
-  const rootContainerVisible = rootContainer ? rootContainer.style.display !== 'none' : false;
-  
-  if (shadowRootRef) {
-    const appContainer = shadowRootRef.querySelector('.ga-notes-container');
-    if (appContainer instanceof HTMLElement) {
-      const appContainerVisible = appContainer.style.display !== 'none';
-      // If either container is visible, the interface should be considered visible
-      return rootContainerVisible || appContainerVisible;
-    }
-  }
-  
-  return rootContainerVisible;
+  return rootContainer ? rootContainer.style.display !== 'none' : false;
 }
 
 async function toggleInterface(forceState?: boolean) {
@@ -533,8 +554,7 @@ async function toggleInterface(forceState?: boolean) {
     if (!isInitialized) {
       const appContainer = await injectApp();
       if (appContainer) {
-        appContainer.style.display = 'block';
-        // Also make sure the root container is visible
+        // Make sure the root container is visible
         const rootContainer = document.getElementById('ga-notes-root');
         if (rootContainer) {
           rootContainer.style.display = 'block';
@@ -542,29 +562,31 @@ async function toggleInterface(forceState?: boolean) {
         isInterfaceVisible = true;
       }
     } else if (shadowRootRef) {
-      const appContainer = shadowRootRef.querySelector('.ga-notes-container');
-      // Also get the root container
+      // Get the root container
       const rootContainer = document.getElementById('ga-notes-root');
       
       // Check actual current visibility if forceState isn't provided
       const currentVisibility = getInterfaceVisibility();
       isInterfaceVisible = forceState !== undefined ? forceState : !currentVisibility;
       
-      // Update both container elements
-      if (appContainer instanceof HTMLElement) {
-        appContainer.style.display = isInterfaceVisible ? 'block' : 'none';
-      }
-      
+      // Update root container element
       if (rootContainer) {
         rootContainer.style.display = isInterfaceVisible ? 'block' : 'none';
       }
     }
     
     // Notify background script of state change
-    port.postMessage({ 
-      type: 'interfaceStateChanged', 
-      isVisible: isInterfaceVisible 
-    });
+    try {
+      port.postMessage({ 
+        type: 'interfaceStateChanged', 
+        isVisible: isInterfaceVisible 
+      });
+    } catch (e) {
+      console.warn('Failed to notify background script about UI state change. Attempting to reconnect...');
+      // If posting a message fails, connection is broken, try to reconnect
+      reconnectionAttempts = 0;
+      setupConnection();
+    }
     
     return true;
   } catch (error) {
@@ -584,16 +606,6 @@ export function toggleTheme() {
     console.error('Failed to toggle theme:', error);
   });
 }
-
-// Handle port disconnection (page closed or navigated away)
-port.onDisconnect.addListener(() => {
-  console.log('Content script disconnected');
-  // Clear position cache when page is closed
-  PositionScaleManager.clearPositionForCurrentTab().catch(error => {
-    console.error('Failed to clear position cache:', error);
-  });
-  PositionScaleManager.clearTabId();
-});
 
 // Add to message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
