@@ -33,7 +33,6 @@ export class TabAssociationManager {
       const associations = result[this.ASSOCIATION_KEY];
       
       if (associations) {
-        console.log('Loaded tab-page associations:', associations);
         return associations;
       }
       
@@ -66,7 +65,6 @@ export class TabAssociationManager {
     try {
       associations.lastUpdated = new Date().toISOString();
       await chrome.storage.local.set({ [this.ASSOCIATION_KEY]: associations });
-      console.log('Saved tab-page associations:', associations);
     } catch (error) {
       console.error('Failed to save tab-page associations:', error);
     }
@@ -113,23 +111,18 @@ export class TabAssociationManager {
       // Track if we need to save changes
       let needsSave = false;
       
-      console.log(`Associating tab ${tabId} with page ${pageUrl}`);
-      
       // If this page was previously associated with another tab,
       // remove the page from that tab's list of pages
       const previousTabId = associations.pageToTab[pageUrl];
       if (previousTabId && previousTabId !== tabId) {
-        console.log(`Page ${pageUrl} was previously associated with tab ${previousTabId}, updating...`);
         
         // Remove page from previous tab's list
         if (associations.tabToPages[previousTabId]) {
           associations.tabToPages[previousTabId] = associations.tabToPages[previousTabId].filter(p => p !== pageUrl);
-          console.log(`Removed page ${pageUrl} from tab ${previousTabId}'s list of pages`);
           
           // Clean up empty arrays
           if (associations.tabToPages[previousTabId].length === 0) {
             delete associations.tabToPages[previousTabId];
-            console.log(`Removed empty page list for tab ${previousTabId}`);
           }
         }
       }
@@ -147,7 +140,6 @@ export class TabAssociationManager {
       }
       
       await this.saveAssociations(associations);
-      console.log(`Associated tab ${tabId} with page ${pageUrl}`);
     } catch (error) {
       console.error('Failed to associate tab with current page:', error);
     }
@@ -167,12 +159,8 @@ export class TabAssociationManager {
       
       // Only update if the global active tab is changing
       if (associations.globalActiveTabId !== tabId) {
-        console.log(`Updating global active tab from ${associations.globalActiveTabId || 'none'} to ${tabId}`);
         associations.globalActiveTabId = tabId;
         await this.saveAssociations(associations);
-        console.log(`Updated global active tab to ${tabId}`);
-      } else {
-        console.log(`Global active tab is already set to ${tabId}, no update needed`);
       }
     } catch (error) {
       console.error('Failed to update global active tab:', error);
@@ -193,7 +181,7 @@ export class TabAssociationManager {
       // First, check if there's a pinned tab - this will be handled by the caller
       const pinnedTab = tabs.find(tab => tab.pinned);
       if (pinnedTab) {
-        console.log(`Found pinned tab ${pinnedTab.id}, will be prioritized`);
+        return pinnedTab.id;
       }
       
       // Second, check if there's a tab associated with this page
@@ -202,12 +190,9 @@ export class TabAssociationManager {
         // Make sure the tab still exists
         const tabExists = tabs.some(tab => tab.id === associatedTabId);
         if (tabExists) {
-          console.log(`Found page-associated tab ${associatedTabId} for page ${pageUrl}`);
-          
           // Update the global active tab without changing the page association
           if (associatedTabId !== associations.globalActiveTabId) {
             await this.updateGlobalActiveTab(associatedTabId);
-            console.log(`Updated global active tab to match page-associated tab ${associatedTabId}`);
           }
           
           return associatedTabId;
@@ -228,7 +213,6 @@ export class TabAssociationManager {
           });
           
           await this.saveAssociations(associations);
-          console.log(`Removed stale association for page ${pageUrl} with deleted tab ${associatedTabId}`);
         }
       }
       
@@ -236,7 +220,6 @@ export class TabAssociationManager {
       if (associations.globalActiveTabId) {
         const globalActiveTab = tabs.find(tab => tab.id === associations.globalActiveTabId);
         if (globalActiveTab) {
-          console.log(`Using global active tab ${associations.globalActiveTabId}`);
           
           // Only automatically associate the global active tab with the current page
           // if it's a valid page and the user is actively interacting with the tab
@@ -248,7 +231,6 @@ export class TabAssociationManager {
           return associations.globalActiveTabId;
         } else {
           // Global active tab no longer exists, find the most recently edited tab
-          console.log(`Global active tab ${associations.globalActiveTabId} no longer exists, updating...`);
           associations.globalActiveTabId = null;
           await this.saveAssociations(associations);
         }
@@ -261,7 +243,6 @@ export class TabAssociationManager {
         });
         
         const mostRecentTab = sortedTabs[0];
-        console.log(`No suitable tab found, using most recently edited tab ${mostRecentTab.id}`);
         
         // Update the global active tab
         associations.globalActiveTabId = mostRecentTab.id;
@@ -301,7 +282,6 @@ export class TabAssociationManager {
       }
       
       await this.saveAssociations(associations);
-      console.log(`Cleaned up associations for removed tab ${tabId}`);
     } catch (error) {
       console.error('Failed to clean up tab associations:', error);
     }

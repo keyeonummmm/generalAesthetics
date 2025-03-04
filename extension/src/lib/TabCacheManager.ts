@@ -92,16 +92,12 @@ export class TabCacheManager {
   public static async loadAttachment(attachmentId: number): Promise<Attachment | null> {
     try {
       const key = `${this.ATTACHMENT_PREFIX}${attachmentId}`;
-      console.log(`Attempting to load attachment with ID ${attachmentId} using key ${key}`);
-      
       const result = await chrome.storage.local.get(key);
       
       if (!result[key]) {
-        console.warn(`Attachment ${attachmentId} not found in cache`);
         return null;
       }
       
-      console.log(`Successfully loaded attachment ${attachmentId} from cache`);
       return result[key];
     } catch (error) {
       console.error(`Failed to load attachment ${attachmentId}:`, error);
@@ -114,18 +110,15 @@ export class TabCacheManager {
    */
   public static async loadAttachmentsForTab(tab: Tab): Promise<Attachment[]> {
     if (!tab.attachments || tab.attachments.length === 0) {
-      console.log(`Tab ${tab.id} has no attachment references to load`);
       return [];
     }
 
-    console.log(`Attempting to load ${tab.attachments.length} attachments for tab ${tab.id}`);
     const attachments: Attachment[] = [];
     const failedAttachments: number[] = [];
     
     for (const reference of tab.attachments) {
       try {
         if (!reference.id) {
-          console.warn(`Skipping attachment reference with no ID in tab ${tab.id}`);
           continue;
         }
         
@@ -144,8 +137,6 @@ export class TabCacheManager {
     if (failedAttachments.length > 0) {
       console.warn(`Failed to load ${failedAttachments.length} attachments for tab ${tab.id}:`, failedAttachments);
     }
-    
-    console.log(`Successfully loaded ${attachments.length} of ${tab.attachments.length} attachments for tab ${tab.id}`);
     return attachments;
   }
 
@@ -183,11 +174,6 @@ export class TabCacheManager {
       return cache;
     }
     
-    console.log(`Removing tab ${tabId} from cache`, {
-      hasNoteId: !!tabToRemove.noteId,
-      attachmentCount: tabToRemove.attachments?.length || 0
-    });
-    
     // Clean up attachments if they exist
     if (tabToRemove?.attachments && tabToRemove.attachments.length > 0) {
       // Check if this is a saved note and if any other tabs reference this note
@@ -197,15 +183,11 @@ export class TabCacheManager {
       
       if (isSharedNote) {
         // If this is a saved note and other tabs reference it, preserve the attachments
-        console.log(`Preserving attachments for note ${tabToRemove.noteId} as it's referenced by other tabs`);
       } else if (tabToRemove.noteId) {
         // If this is a saved note but no other tabs reference it, we still preserve attachments
         // as they might be needed when the note is opened again
-        console.log(`Preserving attachments for saved note ${tabToRemove.noteId}`);
       } else {
         // If this is an unsaved note, clean up its attachments
-        console.log(`Cleaning up attachments for unsaved tab ${tabId}`);
-        
         // Convert attachment references to format expected by cleanupAttachments
         const attachmentsToCleanup = tabToRemove.attachments.map(ref => ({
           id: ref.id,
@@ -248,7 +230,6 @@ export class TabCacheManager {
         if (attachment.id) {
           // Remove the attachment data from storage
           await chrome.storage.local.remove(`${this.ATTACHMENT_PREFIX}${attachment.id}`);
-          console.log(`Cleaned up attachment: ${attachment.id}`);
         }
       }
     } catch (error) {
@@ -264,13 +245,6 @@ export class TabCacheManager {
     tabId: string, 
     attachment: Attachment
   ): Promise<TabCache> {
-    console.log(`Adding attachment to tab ${tabId}:`, {
-      attachmentId: attachment.id,
-      type: attachment.type,
-      hasScreenshotData: !!attachment.screenshotData,
-      hasThumbnailData: !!attachment.thumbnailData
-    });
-    
     const updatedTabs = [...cache.tabs];
     const tabIndex = updatedTabs.findIndex(tab => tab.id === tabId);
     
@@ -295,8 +269,6 @@ export class TabCacheManager {
     if (attachment.id) {
       try {
         const key = `${this.ATTACHMENT_PREFIX}${attachment.id}`;
-        console.log(`Storing attachment ${attachment.id} in cache with key ${key}`);
-        
         await chrome.storage.local.set({
           [key]: attachment
         });
@@ -305,8 +277,6 @@ export class TabCacheManager {
         const result = await chrome.storage.local.get(key);
         if (!result[key]) {
           console.error(`Failed to verify attachment ${attachment.id} was stored in cache`);
-        } else {
-          console.log(`Successfully stored and verified attachment ${attachment.id} in cache`);
         }
       } catch (error) {
         console.error(`Failed to store attachment ${attachment.id} in cache:`, error);
@@ -416,11 +386,9 @@ export class TabCacheManager {
             lastUpdated: new Date().toISOString()
           };
           await this.saveCache(updatedCache);
-          console.log('Cache cleared successfully while preserving pinned tab and active tab data');
         } else {
           // If no tabs to keep, clear the cache
           await chrome.storage.local.remove(this.CACHE_KEY);
-          console.log('No tabs to preserve, cache cleared completely');
         }
       }
     } catch (error) {
@@ -452,15 +420,12 @@ export class TabCacheManager {
    */
   public static async cleanupOrphanedAttachments(): Promise<void> {
     try {
-      console.log('Starting orphaned attachment cleanup...');
-      
       // Get all keys from storage
       const allStorage = await chrome.storage.local.get(null);
       const allKeys = Object.keys(allStorage);
       
       // Filter for attachment keys
       const attachmentKeys = allKeys.filter(key => key.startsWith(this.ATTACHMENT_PREFIX));
-      console.log(`Found ${attachmentKeys.length} total attachment keys in storage`);
       
       // Get the current cache to find active attachment IDs
       const cache = await this.initCache();
@@ -474,12 +439,10 @@ export class TabCacheManager {
               if (attachment.id) {
                 const key = `${this.ATTACHMENT_PREFIX}${attachment.id}`;
                 activeAttachmentIds.push(key);
-                console.log(`Active attachment found: ${key} in tab ${tab.id}`);
               }
             }
           }
         }
-        console.log(`Found ${activeAttachmentIds.length} active attachments across all tabs`);
       } else {
         console.warn('No cache found, all attachments will be considered orphaned');
       }
@@ -489,27 +452,20 @@ export class TabCacheManager {
       
       // Remove orphaned attachments
       if (orphanedKeys.length > 0) {
-        console.log(`Found ${orphanedKeys.length} orphaned attachments to clean up:`, orphanedKeys);
-        
+
         // Remove in batches to avoid potential issues with large numbers of keys
         const BATCH_SIZE = 20;
         for (let i = 0; i < orphanedKeys.length; i += BATCH_SIZE) {
           const batch = orphanedKeys.slice(i, i + BATCH_SIZE);
           await chrome.storage.local.remove(batch);
-          console.log(`Cleaned up batch of ${batch.length} orphaned attachments`);
         }
         
-        console.log(`Successfully cleaned up ${orphanedKeys.length} orphaned attachments`);
-      } else {
-        console.log('No orphaned attachments found');
-      }
-      
+      } 
       // Verify cleanup
       const afterCleanup = await chrome.storage.local.get(null);
       const remainingAttachmentKeys = Object.keys(afterCleanup).filter(key => 
         key.startsWith(this.ATTACHMENT_PREFIX)
       );
-      console.log(`After cleanup: ${remainingAttachmentKeys.length} attachment keys remain in storage`);
       
     } catch (error) {
       console.error('Failed to clean up orphaned attachments:', error);
@@ -584,7 +540,6 @@ export class TabCacheManager {
       };
       
       await this.saveCache(updatedCache);
-      console.log(`Unpinned tab ${tabId} and updated lastEdited timestamp`);
       return updatedCache;
     }
     
@@ -605,31 +560,19 @@ export class TabCacheManager {
    */
   public static async syncCache(): Promise<TabCache | null> {
     try {
-      console.log('Synchronizing tab cache across pages...');
-      
       // Get the current cache from storage
       const result = await chrome.storage.local.get(this.CACHE_KEY);
       const latestCache = result[this.CACHE_KEY];
       
       if (!latestCache) {
-        console.log('No cache found to synchronize');
         return null;
       }
       
-      console.log('Retrieved latest cache from storage:', {
-        tabCount: latestCache.tabs.length,
-        activeTabId: latestCache.activeTabId,
-        lastUpdated: latestCache.lastUpdated
-      });
-      
       // Get pinned tabs - should be at most one with our updated logic
       const pinnedTabs = latestCache.tabs.filter((tab: Tab) => tab.pinned);
-      console.log(`Found ${pinnedTabs.length} pinned tabs in latest cache`);
       
       // Ensure only one tab is pinned (in case there are multiple from older versions)
       if (pinnedTabs.length > 1) {
-        console.log('Found multiple pinned tabs, keeping only the most recently edited one');
-        
         // Sort pinned tabs by lastEdited (newest first)
         const sortedPinnedTabs = [...pinnedTabs].sort((a, b) => 
           new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime()
@@ -645,7 +588,6 @@ export class TabCacheManager {
         
         // Save the updated cache
         await this.saveCache(latestCache);
-        console.log('Updated cache to ensure only one tab is pinned');
       }
       
       // Determine which tab should be active based on the 3-layer priority system
@@ -656,14 +598,11 @@ export class TabCacheManager {
         // Get the pinned tab (should be only one now)
         const pinnedTab = pinnedTabs[0];
         newActiveTabId = pinnedTab.id;
-        console.log(`LAYER 1: Setting pinned tab ${newActiveTabId} as active`);
       } else {
         // Layer 2 & 3: Check for page-associated tab or use global active tab
         const associatedTabId = await TabAssociationManager.getActiveTabForCurrentPage(latestCache.tabs);
         if (associatedTabId) {
           newActiveTabId = associatedTabId;
-          console.log(`LAYER 2/3: Setting tab ${newActiveTabId} as active based on page association or global state`);
-          
           // Update the global active tab in TabAssociationManager
           await TabAssociationManager.updateGlobalActiveTab(associatedTabId);
         }
@@ -673,7 +612,6 @@ export class TabCacheManager {
       if (newActiveTabId !== latestCache.activeTabId) {
         latestCache.activeTabId = newActiveTabId;
         await this.saveCache(latestCache);
-        console.log(`Updated active tab to ${newActiveTabId} in synchronized cache`);
       }
       
       return latestCache;
@@ -689,8 +627,6 @@ export class TabCacheManager {
    */
   public static async cleanupAttachmentsForNote(noteId: string): Promise<void> {
     try {
-      console.log(`Cleaning up attachments for deleted note ${noteId}...`);
-      
       // Get the current cache
       const cache = await this.initCache();
       if (!cache) {
@@ -700,8 +636,7 @@ export class TabCacheManager {
       
       // Find all tabs that reference this note
       const tabsWithNote = cache.tabs.filter(tab => tab.noteId === noteId);
-      console.log(`Found ${tabsWithNote.length} tabs referencing note ${noteId}`);
-      
+    
       // Collect all attachment IDs from these tabs
       const attachmentIds: number[] = [];
       for (const tab of tabsWithNote) {
@@ -714,13 +649,10 @@ export class TabCacheManager {
         }
       }
       
-      console.log(`Found ${attachmentIds.length} attachments to clean up for note ${noteId}`);
-      
       // Remove each attachment from storage
       for (const attachmentId of attachmentIds) {
         const key = `${this.ATTACHMENT_PREFIX}${attachmentId}`;
         await chrome.storage.local.remove(key);
-        console.log(`Removed attachment ${attachmentId} from storage for deleted note ${noteId}`);
       }
       
       // Update the tabs to remove references to the deleted note
@@ -729,7 +661,6 @@ export class TabCacheManager {
           // Check if the tab was pinned before
           const wasPinned = tab.pinned;
           if (wasPinned) {
-            console.log(`Unpinning tab ${tab.id} as it's being reset due to note deletion`);
           }
           
           // Clear the noteId and attachments from the tab, and reset pinned status
@@ -752,7 +683,6 @@ export class TabCacheManager {
       };
       await this.saveCache(updatedCache);
       
-      console.log(`Successfully cleaned up attachments for deleted note ${noteId}`);
     } catch (error) {
       console.error(`Failed to clean up attachments for note ${noteId}:`, error);
     }

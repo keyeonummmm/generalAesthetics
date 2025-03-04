@@ -12,8 +12,6 @@ export class DBProxy {
         const attachments = params.find(param => Array.isArray(param) && param.length > 0 && param[0].type);
         
         if (attachments) {
-          console.log(`DBProxy: Sending ${attachments.length} attachments to background script`);
-          
           // Log attachment sizes to help debug
           let totalSize = 0;
           attachments.forEach((attachment: any, index: number) => {
@@ -25,12 +23,7 @@ export class DBProxy {
               attachmentSize += attachment.thumbnailData.length;
             }
             totalSize += attachmentSize;
-            
-            console.log(`DBProxy: Attachment ${index + 1} size: ~${Math.round(attachmentSize / 1024)}KB`);
           });
-          
-          console.log(`DBProxy: Total attachments size: ~${Math.round(totalSize / 1024)}KB`);
-          
           // Chrome message size limit is around 64MB, but we should warn if getting close
           if (totalSize > 50 * 1024 * 1024) {
             console.warn('DBProxy: Warning - Large attachment data may exceed message size limits');

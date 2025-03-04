@@ -113,8 +113,6 @@ const Popup: React.FC = () => {
 
   const handleScreenshotCapture = async (type: 'visible' | 'full') => {
     try {
-      console.log(`Initiating ${type} screenshot capture`);
-      
       // Show loading indicator
       setIsLoading(true);
       
@@ -161,14 +159,6 @@ const Popup: React.FC = () => {
       
       // Create a lazy-loadable version with thumbnail
       const lazyLoadable = await createLazyLoadableImage(response.screenshotData);
-      
-      console.log('Image processed:', {
-        format: processedImage.format,
-        originalSize: Math.round(processedImage.originalSize / 1024) + 'KB',
-        processedSize: Math.round(processedImage.processedSize / 1024) + 'KB',
-        compressionRatio: processedImage.compressionRatio.toFixed(2) + 'x',
-        hasThumbnail: !!processedImage.thumbnailUrl
-      });
       
       // Create attachment with thumbnail and metadata
       const attachment: Attachment = {

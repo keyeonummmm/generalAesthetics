@@ -6,7 +6,6 @@ let activeSelectionInstance: ScreenshotSelection | null = null;
 
 // Add event listener for initialization
 document.addEventListener('init-screenshot-selection', () => {
-  console.log('Selection: Received init event');
   // Remove existing instance if there is one
   if (activeSelectionInstance) {
     activeSelectionInstance.cleanup();
@@ -33,7 +32,6 @@ export class ScreenshotSelection {
   }
 
   private initialize() {
-    console.log('Selection: Initializing selection UI');
     // Remove any existing overlay elements first
     this.removeExistingOverlays();
     
@@ -99,7 +97,6 @@ export class ScreenshotSelection {
   private canCapture(): boolean {
     const now = Date.now();
     if (now - this.lastCaptureTime < this.CAPTURE_COOLDOWN) {
-      console.log('Please wait before taking another screenshot');
       return false;
     }
     this.lastCaptureTime = now;
@@ -144,7 +141,6 @@ export class ScreenshotSelection {
     }
 
     try {
-      console.log('Selection: Starting area capture');
       const rect = this.selection.getBoundingClientRect();
       
       // Hide extension UI before taking screenshot
@@ -203,7 +199,6 @@ export class ScreenshotSelection {
         rect.height
       );
 
-      console.log('Selection: Sending cropped image data');
       chrome.runtime.sendMessage({
         type: 'SELECTION_CAPTURE',
         data: canvas.toDataURL('image/png')

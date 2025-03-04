@@ -272,17 +272,14 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
     
     if (!tab.attachments || tab.attachments.length === 0) {
-      console.log(`Tab ${tabId} has no attachments to load`);
       return;
     }
     
     // Skip if attachments are already loaded and match the expected count
     if (tab.loadedAttachments && tab.loadedAttachments.length === tab.attachments.length) {
-      console.log(`Attachments for tab ${tabId} are already loaded (${tab.loadedAttachments.length} items)`);
       return;
     }
     
-    console.log(`Loading ${tab.attachments.length} attachments for tab ${tabId}`);
     setLoadingAttachments(true);
     
     try {
@@ -292,15 +289,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       // If we couldn't load all attachments from cache and this is a saved note,
       // try loading them from the database
       if (loadedAttachments.length < tab.attachments.length && tab.noteId) {
-        console.log(`Not all attachments were found in cache for note ${tab.noteId}. Trying to load from database...`);
-        
         try {
           // Get the full note with attachments from the database
           const fullNote = await NotesDB.getNote(tab.noteId);
           
           if (fullNote && fullNote.attachments && fullNote.attachments.length > 0) {
-            console.log(`Found ${fullNote.attachments.length} attachments in database for note ${tab.noteId}`);
-            
             // If we found attachments in the database, update the cache with them
             const currentCache = await TabCacheManager.initCache();
             if (currentCache) {
@@ -308,7 +301,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 // Only add if it has the required data and isn't already loaded
                 if ((attachment.screenshotData || attachment.url) && 
                     !loadedAttachments.some(a => a.id === attachment.id)) {
-                  console.log(`Restoring attachment ${attachment.id} to cache for note ${tab.noteId}`);
                   await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
                 }
               }
@@ -317,8 +309,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               const reloadedAttachments = await TabCacheManager.loadAttachmentsForTab(tab);
               
               if (reloadedAttachments.length > loadedAttachments.length) {
-                console.log(`Successfully restored ${reloadedAttachments.length - loadedAttachments.length} attachments from database to cache`);
-                
                 // Use the reloaded attachments
                 setTabs(prevTabs => prevTabs.map(t => {
                   if (t.id === tabId) {
@@ -331,14 +321,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               }
             }
           } else {
-            console.log(`No attachments found in database for note ${tab.noteId}`);
           }
         } catch (error) {
           console.error(`Failed to load attachments from database for note ${tab.noteId}:`, error);
         }
       }
-      
-      console.log(`Successfully loaded ${loadedAttachments.length} attachments for tab ${tabId}`);
       
       // Update the tab with loaded attachments
       setTabs(prevTabs => prevTabs.map(t => {
@@ -390,7 +377,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const confirmCloseTab = async (tabId: string) => {
-    console.log('Confirming tab close:', tabId);
     
     const tab = tabs.find(tab => tab.id === tabId);
     if (!tab) return;
@@ -404,7 +390,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                        tab.syncStatus === 'pending';
     
     if (isCleanTab) {
-      console.log('Tab is completely clean, closing without confirmation');
       closeTab(tabId);
       return;
     }
@@ -420,7 +405,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           
           // If nothing has changed, close without confirmation
           if (!titleChanged && !contentChanged) {
-            console.log('Tab has no changes compared to saved note, closing without confirmation');
             closeTab(tabId);
             return;
           }
@@ -447,10 +431,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           hasUnsavedChanges = titleChanged || contentChanged;
           
           if (hasUnsavedChanges) {
-            console.log('Detected unsaved changes compared to saved note:', {
-              titleChanged,
-              contentChanged
-            });
           }
         }
       } catch (error) {
@@ -461,7 +441,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }
     
     if (hasUnsavedChanges) {
-      console.log('Tab has unsaved changes, showing confirmation dialog');
       // Show confirmation dialog
       setConfirmationState({
         isOpen: true,
@@ -470,7 +449,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       });
     } else {
       // No unsaved changes, close the tab immediately
-      console.log('Tab has no unsaved changes, closing immediately');
       closeTab(tabId);
     }
   };
@@ -489,17 +467,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           attachmentsToSave = tab.loadedAttachments;
         } else {
           // Load attachments from cache
-          console.log('Loading attachments for save operation');
           attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
         }
       }
       
-      console.log('Saving note before closing tab:', {
-        tabId,
-        title: tab.title,
-        hasAttachments: attachmentsToSave.length > 0,
-        attachmentCount: attachmentsToSave.length
-      });
       
       let savedNote: Note;
       
@@ -510,7 +481,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           tab.content,
           attachmentsToSave
         );
-        console.log('Created new note before closing tab:', savedNote.id);
       } else {
         // Update existing note
         savedNote = await NotesDB.updateNote(
@@ -520,7 +490,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           tab.version,
           attachmentsToSave
         );
-        console.log('Updated note before closing tab:', savedNote.id);
       }
       
       // Update the tab with saved note data to mark it as synced
@@ -537,7 +506,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       }));
       
       // Close the tab after saving
-      console.log('Note saved successfully, now closing tab:', tabId);
       closeTab(tabId);
     } catch (error) {
       console.error('Failed to save note before closing tab:', error);
@@ -556,7 +524,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
   
   const handleCloseWithoutSaving = (tabId: string) => {
-    console.log('Closing tab without saving:', tabId);
     closeTab(tabId);
     
     // Reset confirmation state
@@ -568,7 +535,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const closeTab = async (tabId: string) => {
-    console.log('Closing tab:', tabId);
     
     // Get the tab before we remove it
     const tabToClose = tabs.find(tab => tab.id === tabId);
@@ -585,18 +551,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     // We want to remove the tab but not delete the note's attachments from storage
     // since they might be needed by other tabs or in the future
     if (tabToClose.noteId) {
-      console.log(`Tab ${tabId} is associated with note ${tabToClose.noteId}`);
       
       // Check if this note is open in any other tabs
       const otherTabsWithSameNote = tabs.filter(
         tab => tab.noteId === tabToClose.noteId && tab.id !== tabId
       );
-      
-      if (otherTabsWithSameNote.length > 0) {
-        console.log(`Note ${tabToClose.noteId} is open in ${otherTabsWithSameNote.length} other tabs, preserving attachments`);
-      } else {
-        console.log(`Note ${tabToClose.noteId} is not open in any other tabs`);
-      }
     }
     
     // Use TabCacheManager to remove the tab and clean up its attachments
@@ -605,7 +564,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     // If no tabs remain, create a new empty tab
     if (updatedCache.tabs.length === 0) {
       const newTabId = `new-${uuidv4()}`;
-      console.log('Creating new empty tab:', newTabId);
       const newTab: Tab = { 
         id: newTabId, 
         title: '', 
@@ -636,7 +594,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     } else if (updatedCache.tabs.length === 1 && updatedCache.tabs[0].id.startsWith('new-')) {
       // If there's only one tab left and it's a new tab, clean up orphaned attachments
       // but don't clear all caches to preserve the tab's state
-      console.log('Only one new tab remains, cleaning up orphaned attachments');
       await TabCacheManager.cleanupOrphanedAttachments();
       
       setTabs(updatedCache.tabs);
@@ -666,13 +623,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const addTab = (note?: Note, forceNew: boolean = false) => {
-    console.log('Adding tab for note:', note ? {
-      id: note.id,
-      title: note.title,
-      hasAttachments: note.attachments && note.attachments.length > 0,
-      attachmentCount: note.attachments?.length || 0
-    } : 'new empty tab', 'forceNew:', forceNew);
-    
     // Check if this note is already open in a tab
     const existingTab = tabs.find(tab => 
       (note && (tab.id === note.id || tab.noteId === note.id))
@@ -680,7 +630,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
     if (existingTab) {
       // If the note is already open, just set it as active
-      console.log(`Note ${note?.id} is already open in tab ${existingTab.id}, setting as active`);
       setActiveTabId(existingTab.id);
       
       // Associate this tab with the current page
@@ -691,7 +640,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           note.attachments && 
           note.attachments.length > 0 && 
           (!existingTab.loadedAttachments || existingTab.loadedAttachments.length < note.attachments.length)) {
-        console.log(`Ensuring attachments are loaded for existing tab ${existingTab.id}`);
         setTimeout(() => {
           loadAttachmentsForTab(existingTab.id);
         }, 0);
@@ -710,7 +658,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         // Reuse an empty tab
         const updatedTabs = [...tabs];
         const tabToUpdate = updatedTabs[emptyTabIndex];
-        console.log(`Reusing empty tab ${tabToUpdate.id} for note ${note?.id || 'new'}`);
         
         if (note) {
           // Update the empty tab with the note's details
@@ -736,7 +683,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         
         // Explicitly load attachments for the tab if it has any
         if (note && note.attachments && note.attachments.length > 0) {
-          console.log(`Note has ${note.attachments.length} attachments, scheduling load for tab ${tabToUpdate.id}`);
           // Use setTimeout to ensure the tab state is updated before loading attachments
           setTimeout(() => {
             loadAttachmentsForTab(tabToUpdate.id);
@@ -749,8 +695,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
     // Create a new tab
     const newTabId = note ? `tab-${note.id}` : `new-${uuidv4()}`;
-    console.log(`Creating new tab ${newTabId} for note ${note?.id || 'new'}`);
-    
     const newTab: Tab = {
       id: newTabId,
       title: note ? note.title : '',
@@ -776,7 +720,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     
     // Explicitly load attachments for the new tab if it has any
     if (note && note.attachments && note.attachments.length > 0) {
-      console.log(`New tab has ${note.attachments.length} attachments, scheduling load for tab ${newTabId}`);
       // Use setTimeout to ensure the tab state is updated before loading attachments
       setTimeout(() => {
         loadAttachmentsForTab(newTabId);
@@ -802,11 +745,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const removeTabContent = async (noteId: string) => {
-    console.log('removeTabContent called for noteId:', noteId);
-    
     // First, clean up all attachments for this note ID
     if (noteId) {
-      console.log(`Cleaning up attachments for note ${noteId}`);
       await TabCacheManager.cleanupAttachmentsForNote(noteId);
     }
     
@@ -814,22 +754,16 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     const tabsToUpdate = tabs.filter(tab => tab.noteId === noteId || tab.id === noteId);
     
     if (tabsToUpdate.length === 0) {
-      console.log(`No tabs found for note ${noteId}`);
       return;
     }
-    
-    console.log(`Found ${tabsToUpdate.length} tabs associated with note ${noteId}`);
     
     // Process each tab
     for (const tab of tabsToUpdate) {
       if (tab.id === activeTabId) {
         // For active tab: Clear content but keep the tab
-        console.log('Cleaning content for active tab:', tab.id);
-        
         // Check if the tab was pinned before
         const wasPinned = tab.pinned;
         if (wasPinned) {
-          console.log(`Unpinning tab ${tab.id} as it's being reset`);
         }
         
         // Update the tab state to clear content and references
@@ -862,8 +796,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         );
       } else {
         // For inactive tabs: Remove them completely
-        console.log('Removing inactive tab:', tab.id);
-        
         // Use closeTab which properly cleans up the tab
         await closeTab(tab.id);
       }
@@ -874,11 +806,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
 
   const removeTabByNoteId = async (noteId: string) => {
-    console.log('removeTabByNoteId called for noteId:', noteId);
-    
     // First, clean up all attachments for this note ID
     if (noteId) {
-      console.log(`Cleaning up attachments for note ${noteId}`);
       await TabCacheManager.cleanupAttachmentsForNote(noteId);
     }
     
@@ -886,15 +815,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     const tabsToRemove = tabs.filter(tab => tab.noteId === noteId);
     
     if (tabsToRemove.length === 0) {
-      console.log(`No tabs found for note ${noteId}`);
       return;
     }
     
-    console.log(`Found ${tabsToRemove.length} tabs associated with note ${noteId}`);
-    
     // Process each tab
     for (const tab of tabsToRemove) {
-      console.log(`Removing tab ${tab.id} for deleted note ${noteId}`);
       await closeTab(tab.id);
     }
     
@@ -954,28 +879,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       await removeTabByNoteId(noteId);
     },
     updateTabWithId: (tabId: string, note: Note) => {
-      console.log('TabManager.updateTabWithId called:', {
-        tabId,
-        note,
-        currentTabs: tabs
-      });
-      
+
       setTabs(prevTabs => {
         const updatedTabs = prevTabs.map(tab => {
           if (tab.id === tabId) {
-            console.log('Updating tab:', {
-              before: tab,
-              after: {
-                ...tab,
-                noteId: note.id,
-                title: note.title,
-                content: note.content,
-                version: note.version,
-                attachments: note.attachments,
-                isNew: false,
-                syncStatus: 'synced'
-              }
-            });
             return {
               ...tab,
               noteId: note.id,
@@ -989,7 +896,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           }
           return tab;
         });
-        console.log('Tabs after update:', updatedTabs);
         return updatedTabs;
       });
     },
@@ -1029,7 +935,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   }));
 
   const handleTabClick = (tabId: string) => {
-    console.log(`Switching to tab: ${tabId}`);
     setActiveTabId(tabId);
     
     // Associate this tab with the current page
@@ -1045,21 +950,18 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   // Function to update tab associations
   const updateTabAssociations = async (tabId: string) => {
     try {
-      console.log(`Updating associations for tab ${tabId}`);
       // Send a message to the background script to associate this tab with the current page
       chrome.runtime.sendMessage({ 
         type: 'ASSOCIATE_TAB',
         tabId
       }, (response: { success: boolean, error?: string } | undefined) => {
         if (response && response.success) {
-          console.log(`Successfully associated tab ${tabId} with current page`);
         } else {
           console.error(`Failed to associate tab ${tabId} with current page:`, response?.error);
           
           // Fall back to direct association
           TabAssociationManager.associateTabWithCurrentPage(tabId)
             .then(() => TabAssociationManager.updateGlobalActiveTab(tabId))
-            .then(() => console.log(`Successfully associated tab ${tabId} with current page (fallback)`))
             .catch(err => console.error(`Failed to associate tab ${tabId} with current page (fallback):`, err));
         }
       });
@@ -1213,21 +1115,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           attachmentsToSave = tab.loadedAttachments;
         } else {
           // Load attachments from cache
-          console.log('Loading attachments for save operation');
           attachmentsToSave = await TabCacheManager.loadAttachmentsForTab(tab);
         }
       }
-      
-      console.log('Saving with attachments:', {
-        count: attachmentsToSave.length,
-        attachments: attachmentsToSave.map(a => ({
-          id: a.id,
-          type: a.type,
-          hasScreenshotData: !!a.screenshotData,
-          hasThumbnailData: !!a.thumbnailData,
-          metadata: a.metadata
-        }))
-      });
 
       let savedNote: Note;
       
@@ -1270,12 +1160,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 const currentCache = await TabCacheManager.initCache();
                 if (currentCache) {
                   // Use the TabCacheManager to update the cache with the full attachment data
-                  console.log(`Ensuring ${attachmentsToSave.length} attachments are cached for saved note ${savedNote.id}`);
-                  
                   for (const attachment of attachmentsToSave) {
                     // Add each attachment to the tab in the cache
                     await TabCacheManager.addAttachmentToTab(currentCache, tabId, attachment);
-                    console.log(`Cached attachment ${attachment.id} for note ${savedNote.id}`);
                   }
                   
                   // Verify all attachments were cached
@@ -1285,7 +1172,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                     attachments: savedNote.attachments || []
                   });
                   
-                  console.log(`Verification: ${verifiedAttachments.length} of ${savedNote.attachments?.length || 0} attachments are in cache for note ${savedNote.id}`);
                 }
               } catch (error) {
                 console.error(`Failed to cache attachments for note ${savedNote.id}:`, error);
@@ -1301,14 +1187,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         }
         return t;
       }));
-
-      console.log('Tab updated after save:', {
-        tabId,
-        noteId: savedNote.id,
-        isNewNote: !tab.noteId,
-        attachments: savedNote.attachments
-      });
-
       return savedNote;
     } catch (error) {
       console.error('Failed to handle save:', error);
@@ -1318,8 +1196,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   // Add methods to pin and unpin tabs
   const handlePinTab = async (tabId: string) => {
-    console.log('Pinning tab:', tabId);
-    
     // Get current cache
     const currentCache = await TabCacheManager.initCache();
     if (!currentCache) return;
@@ -1335,8 +1211,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
   
   const handleUnpinTab = async (tabId: string) => {
-    console.log('Unpinning tab:', tabId);
-    
     // Get current cache
     const currentCache = await TabCacheManager.initCache();
     if (!currentCache) return;
@@ -1363,8 +1237,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   // Add a method to synchronize the cache
   const syncCache = async () => {
-    console.log('Synchronizing cache...');
-    
     try {
       // Send a message to the background script to sync tabs
       chrome.runtime.sendMessage({ 
@@ -1372,10 +1244,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       }, async (response: { success: boolean, syncedCache?: TabCache, error?: string }) => {
         if (response && response.success && response.syncedCache) {
           const syncedCache = response.syncedCache;
-          console.log('Cache synchronized successfully via background script:', {
-            tabCount: syncedCache.tabs.length,
-            activeTabId: syncedCache.activeTabId
-          });
           
           // Update the tabs state with the synchronized cache
           setTabs(syncedCache.tabs);
@@ -1395,11 +1263,6 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           const syncedCache = await TabCacheManager.syncCache();
           
           if (syncedCache) {
-            console.log('Cache synchronized successfully via fallback:', {
-              tabCount: syncedCache.tabs.length,
-              activeTabId: syncedCache.activeTabId
-            });
-            
             // Update the tabs state with the synchronized cache
             setTabs(syncedCache.tabs);
             
@@ -1423,14 +1286,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('Extension became visible, synchronizing cache...');
         // Send a message to the background script to sync tabs
         chrome.runtime.sendMessage({ 
           type: 'TAB_VISIBILITY_CHANGE',
           isVisible: true
         }, (response: { success: boolean, syncedCache?: TabCache, error?: string } | undefined) => {
           if (response && response.success) {
-            console.log('Tabs synchronized after visibility change');
             syncCache();
           } else {
             console.error('Failed to sync tabs after visibility change:', response?.error);

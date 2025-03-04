@@ -27,7 +27,6 @@ export const SaveButton: React.FC<SaveButtonProps> = ({
 
   const handleSave = async () => {
     if (!title.trim() && !content.trim() && (!attachments || attachments.length === 0)) {
-      console.log('[SaveButton] Aborting save - no content to save');
       return;
     }
 

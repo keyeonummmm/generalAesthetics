@@ -122,18 +122,7 @@ export class NotesDB {
         id: attachment.id || Date.now(),
         // Ensure createdAt is present
         createdAt: attachment.createdAt || timestamp
-      };
-      
-      // Log attachment details for debugging
-      console.log('Processing attachment for save:', {
-        id: processedAttachment.id,
-        type: processedAttachment.type,
-        hasScreenshotData: !!processedAttachment.screenshotData,
-        hasThumbnailData: !!processedAttachment.thumbnailData,
-        hasMetadata: !!processedAttachment.metadata,
-        syncStatus: processedAttachment.syncStatus
-      });
-      
+      };      
       return processedAttachment;
     }) || [];
 
@@ -159,10 +148,6 @@ export class NotesDB {
       const request = store.add(newNote);
 
       request.onsuccess = () => {
-        console.log('Successfully created note with attachments:', {
-          noteId: newNote.id,
-          attachmentCount: newNote.attachments?.length || 0
-        });
         resolve(newNote);
       };
       request.onerror = () => {
@@ -202,17 +187,6 @@ export class NotesDB {
         // Ensure createdAt is present
         createdAt: attachment.createdAt || timestamp
       };
-      
-      // Log attachment details for debugging
-      console.log('Processing attachment for update:', {
-        id: processedAttachment.id,
-        type: processedAttachment.type,
-        hasScreenshotData: !!processedAttachment.screenshotData,
-        hasThumbnailData: !!processedAttachment.thumbnailData,
-        hasMetadata: !!processedAttachment.metadata,
-        syncStatus: processedAttachment.syncStatus
-      });
-      
       return processedAttachment;
     }) || [];
 
@@ -248,24 +222,14 @@ export class NotesDB {
   
   static async addAttachment(noteId: string,
     url: string,
-    title: string | undefined,
     screenshotData?: string,
     screenshotType?: 'visible' | 'full'
   ): Promise<Note> {
-    console.log('NotesDB.addAttachment called:', {
-      noteId,
-      url,
-      title,
-      screenshotData,
-      screenshotType
-    });
     
     const note = await this.getNote(noteId);
     if (!note) {
       throw new Error('Note not found');
     }
-    
-    console.log('Found note for attachment:', note);
     
     const attachment: Attachment = {
       type: "url",
@@ -288,8 +252,6 @@ export class NotesDB {
       syncStatus: 'pending'
     };
 
-    console.log('Saving updated note with attachment:', updatedNote);
-    
     // Save to IndexedDB
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
@@ -298,7 +260,6 @@ export class NotesDB {
       const request = store.put(updatedNote);
 
       request.onsuccess = () => {
-        console.log('Successfully saved note with attachment');
         resolve(updatedNote);
       };
       request.onerror = () => {

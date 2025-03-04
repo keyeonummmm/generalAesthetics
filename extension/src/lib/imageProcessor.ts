@@ -46,8 +46,6 @@ export async function processImage(
   imageDataUrl: string,
   options: Partial<ImageProcessingOptions> = {}
 ): Promise<ProcessedImage> {
-  console.log('ImageProcessor: Starting image processing');
-  
   // Merge with default options
   const settings: ImageProcessingOptions = {
     ...DEFAULT_OPTIONS,
@@ -63,11 +61,6 @@ export async function processImage(
     : DEFAULT_OPTIONS.skipCompressionThreshold!;
     
   if (originalSize <= skipThreshold) {
-    console.log('ImageProcessor: Image too small, skipping compression', {
-      originalSize: `${(originalSize / 1024).toFixed(2)} KB`,
-      threshold: `${skipThreshold / 1024} KB`
-    });
-    
     // Still create a thumbnail for consistency
     const image = await loadImage(imageDataUrl);
     const canvas = document.createElement('canvas');
@@ -139,11 +132,6 @@ export async function processImage(
       // Scale quality based on size (smaller = higher quality)
       const sizeRatio = originalSize / smallThreshold;
       adjustedQuality = Math.min(98, Math.max(settings.quality, Math.round(95 - (sizeRatio * 10))));
-      console.log('ImageProcessor: Small image detected, adjusting quality', {
-        originalQuality: settings.quality,
-        adjustedQuality,
-        originalSize: `${(originalSize / 1024).toFixed(2)} KB`
-      });
     }
     
     // Try different formats and pick the best one
@@ -188,21 +176,12 @@ export async function processImage(
     
     // If all compressed versions are larger than original, use original
     if (bestResult.size >= originalSize) {
-      console.log('ImageProcessor: All compressed versions larger than original, using original');
       bestResult = {
         dataUrl: imageDataUrl,
         format: 'original',
         size: originalSize
       };
     }
-    
-    console.log('ImageProcessor: Processing complete', {
-      format: bestResult.format,
-      originalSize: `${(originalSize / 1024).toFixed(2)} KB`,
-      processedSize: `${(bestResult.size / 1024).toFixed(2)} KB`,
-      compressionRatio: (originalSize / bestResult.size).toFixed(2),
-      hasThumbnail: !!thumbnailUrl
-    });
     
     return {
       dataUrl: bestResult.dataUrl,
@@ -213,7 +192,6 @@ export async function processImage(
       thumbnailUrl
     };
   } catch (error) {
-    console.error('Image processing failed:', error);
     // Fall back to original image if processing fails
     return {
       dataUrl: imageDataUrl,
@@ -289,7 +267,6 @@ async function createProgressiveJpeg(canvas: HTMLCanvasElement, quality: number)
       reader.readAsDataURL(blob);
     });
   } catch (error) {
-    console.error('Failed to create progressive JPEG:', error);
     // Fall back to standard JPEG
     return canvas.toDataURL('image/jpeg', quality / 100);
   }
@@ -325,8 +302,6 @@ export async function compressImageAggressively(
   imageDataUrl: string,
   targetSizeKB: number = 100
 ): Promise<ProcessedImage> {
-  console.log('ImageProcessor: Starting aggressive compression');
-  
   // Calculate original size
   const originalSize = calculateDataUrlSize(imageDataUrl);
   
@@ -429,13 +404,6 @@ export async function compressImageAggressively(
     });
   }
   
-  console.log('ImageProcessor: Aggressive compression complete', {
-    originalSize: `${(originalSize / 1024).toFixed(2)} KB`,
-    finalSize: `${(result.processedSize / 1024).toFixed(2)} KB`,
-    compressionRatio: result.compressionRatio.toFixed(2),
-    targetReached: result.processedSize <= targetSizeKB * 1024
-  });
-  
   return result;
 }
 
@@ -446,14 +414,11 @@ export async function compressImageAggressively(
 export async function createLazyLoadableImage(
   imageDataUrl: string
 ): Promise<{thumbnail: string, fullImage: string}> {
-  console.log('ImageProcessor: Creating lazy-loadable image');
-  
   // Calculate original size
   const originalSize = calculateDataUrlSize(imageDataUrl);
   
   // For small images, don't create separate thumbnail
   if (originalSize < 10 * 1024) { // 10KB
-    console.log('ImageProcessor: Image small enough, using same image for thumbnail and full');
     // Process the image with default settings
     const processed = await processImage(imageDataUrl, {
       format: 'webp',
@@ -526,14 +491,6 @@ export async function createLazyLoadableImage(
   
   // Process the full image
   const processed = await processImage(imageDataUrl, fullImageOptions);
-  
-  console.log('ImageProcessor: Lazy-loadable image created', {
-    originalSize: `${(originalSize / 1024).toFixed(2)} KB`,
-    fullImageSize: `${(processed.processedSize / 1024).toFixed(2)} KB`,
-    thumbnailSize: `${(calculateDataUrlSize(thumbnailDataUrl) / 1024).toFixed(2)} KB`,
-    dimensions: `${image.width}×${image.height}`,
-    thumbnailDimensions: `${thumbWidth}×${thumbHeight}`
-  });
   
   return {
     thumbnail: thumbnailDataUrl,
