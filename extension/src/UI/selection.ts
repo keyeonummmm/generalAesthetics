@@ -216,17 +216,11 @@ export class ScreenshotSelection {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     } finally {
-      // Show extension UI again
-      this.showExtensionUI();
+      // Don't show the extension UI again here, as it will be shown by Popup.tsx
+      // Don't remove capturing classes either, as we're cleaning up the entire overlay
       
-      // Remove capturing classes if cleanup hasn't happened yet
-      this.overlay.classList.remove('capturing');
-      this.selection.classList.remove('capturing');
-      
-      // Wait for fade-in animation to complete before cleanup
-      setTimeout(() => {
-        this.cleanup();
-      }, 300);
+      // Clean up immediately instead of waiting
+      this.cleanup();
     }
   };
 
