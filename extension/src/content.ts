@@ -46,10 +46,7 @@ function setupConnection() {
     // and we haven't exceeded max attempts
     if (document.visibilityState === 'visible' && reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
       reconnectionAttempts++;
-      console.log(`Attempting to reconnect (${reconnectionAttempts}/${MAX_RECONNECTION_ATTEMPTS})`);
       setTimeout(setupConnection, 1000 * reconnectionAttempts); // Exponential backoff
-    } else if (reconnectionAttempts >= MAX_RECONNECTION_ATTEMPTS) {
-      console.log('Max reconnection attempts reached. Please refresh the page to restore functionality.');
     } else {
       // Clear position cache when page is closed
       PositionScaleManager.clearPositionForCurrentTab().catch(error => {
@@ -433,6 +430,22 @@ function applyPositionAndScale(position: PositionScale, direction: string = '') 
       void popupContainer.offsetWidth; // Force reflow
       popupContainer.style.height = `${position.height}px`;
       void popupContainer.offsetHeight; // Force reflow
+      
+      // Ensure the footer is properly visible by adjusting container content
+      const content = shadowRootRef.querySelector('.content') as HTMLElement;
+      const header = shadowRootRef.querySelector('.header') as HTMLElement;
+      const footer = shadowRootRef.querySelector('.footer') as HTMLElement;
+      
+      if (content && header && footer) {
+        // Calculate available height for content
+        const headerHeight = header.offsetHeight;
+        const footerHeight = footer.offsetHeight;
+        const containerHeight = position.height;
+        
+        // Set content height to fill available space while preserving footer visibility
+        content.style.height = `${containerHeight - headerHeight - footerHeight}px`;
+        content.style.minHeight = '50px'; // Ensure minimum content height
+      }
     }
     
     // Also apply to the app container as before
@@ -448,13 +461,6 @@ function applyPositionAndScale(position: PositionScale, direction: string = '') 
       appContainer.style.zIndex = '1';
       appContainer.style.overflow = 'hidden';
       appContainer.style.borderRadius = '8px';
-    }
-    
-    // Update any content area to maintain proper layout
-    const content = shadowRootRef.querySelector('.content') as HTMLElement;
-    if (content) {
-      content.style.height = 'auto';
-      content.style.flex = '1';
     }
   }
   
@@ -983,15 +989,22 @@ function setupEdgeResizing(container: HTMLElement) {
           const header = shadowRootRef.querySelector('.header') as HTMLElement;
           const footer = shadowRootRef.querySelector('.footer') as HTMLElement;
           const tabList = shadowRootRef.querySelector('.tab-list') as HTMLElement;
+          const popupContainer = shadowRootRef.querySelector('.popup-container') as HTMLElement;
           
-          if (content && header && footer) {
+          if (content && header && footer && popupContainer) {
             // Calculate available height for content
             const headerHeight = header.offsetHeight;
             const footerHeight = footer.offsetHeight;
             const containerHeight = container.offsetHeight;
             
-            // Set content height to fill available space
-            content.style.height = `${containerHeight - headerHeight - footerHeight}px`;
+            // Ensure the popup container height is synchronized
+            popupContainer.style.height = `${containerHeight}px`;
+            void popupContainer.offsetHeight; // Force reflow
+            
+            // Set content height to fill available space while ensuring footer is visible
+            const contentHeight = containerHeight - headerHeight - footerHeight;
+            content.style.height = `${Math.max(50, contentHeight)}px`;
+            content.style.overflow = 'auto';
             
             // Ensure tab-list doesn't change height
             if (tabList) {
@@ -1086,21 +1099,6 @@ function handleResize(e: MouseEvent) {
     }
   }
   
-  // Handle corner resizing (combination of edge behaviors)
-  if (resizeDirection === 'ne') {
-    // Northeast corner - combine north and east behaviors
-    // Already handled by the individual 'n' and 'e' cases
-  } else if (resizeDirection === 'se') {
-    // Southeast corner - combine south and east behaviors
-    // Already handled by the individual 's' and 'e' cases
-  } else if (resizeDirection === 'sw') {
-    // Southwest corner - combine south and west behaviors
-    // Already handled by the individual 's' and 'w' cases
-  } else if (resizeDirection === 'nw') {
-    // Northwest corner - combine north and west behaviors
-    // Already handled by the individual 'n' and 'w' cases
-  }
-  
   // Ensure minimum dimensions are respected
   if (newWidth < minWidth) {
     if (resizeDirection.includes('w')) {
@@ -1171,13 +1169,24 @@ function handleResize(e: MouseEvent) {
   // Update the content area to maintain header and footer heights
   if (shadowRootRef) {
     const content = shadowRootRef.querySelector('.content') as HTMLElement;
+    const header = shadowRootRef.querySelector('.header') as HTMLElement;
+    const footer = shadowRootRef.querySelector('.footer') as HTMLElement;
     const tabList = shadowRootRef.querySelector('.tab-list') as HTMLElement;
+    const popupContainer = shadowRootRef.querySelector('.popup-container') as HTMLElement;
     
-    if (content) {
-      // Let the content area flex to fill available space
-      // The header and footer will maintain their heights due to their CSS
-      content.style.height = 'auto';
-      content.style.flex = '1';
+    if (content && header && footer && popupContainer) {
+      // Calculate available height for content
+      const headerHeight = header.offsetHeight;
+      const footerHeight = footer.offsetHeight;
+      
+      // Ensure the popup container height matches new dimensions
+      popupContainer.style.height = `${newHeight}px`;
+      void popupContainer.offsetHeight; // Force reflow
+      
+      // Set content height to fill available space while preserving header and footer
+      const contentHeight = newHeight - headerHeight - footerHeight;
+      content.style.height = `${Math.max(50, contentHeight)}px`;
+      content.style.overflow = 'auto';
       
       // Ensure tab-list doesn't change height during resize
       if (tabList) {
@@ -1192,6 +1201,7 @@ function stopResize() {
   if (!isResizing) {
     return;
   }
+  
   isResizing = false;
   resizeDirection = '';
   
@@ -1201,10 +1211,36 @@ function stopResize() {
     resizeAnimationFrameId = null;
   }
   
-  // Remove the resizing class
   const container = document.getElementById('ga-notes-root');
-  if (container) {
-    container.classList.remove('resizing');
+  if (!container) {
+    return;
+  }
+  
+  // Apply changes
+  container.classList.remove('resizing');
+  
+  // Ensure the popup container has the final dimensions and layout
+  if (shadowRootRef) {
+    const popupContainer = shadowRootRef.querySelector('.popup-container') as HTMLElement;
+    const content = shadowRootRef.querySelector('.content') as HTMLElement;
+    const header = shadowRootRef.querySelector('.header') as HTMLElement;
+    const footer = shadowRootRef.querySelector('.footer') as HTMLElement;
+    
+    if (popupContainer && container) {
+      // Make sure popup container has the same dimensions as the root container
+      popupContainer.style.height = `${container.offsetHeight}px`;
+      void popupContainer.offsetHeight; // Force reflow
+      
+      // Adjust content area to maintain proper layout
+      if (content && header && footer) {
+        const headerHeight = header.offsetHeight;
+        const footerHeight = footer.offsetHeight;
+        const containerHeight = container.offsetHeight;
+        
+        const contentHeight = containerHeight - headerHeight - footerHeight;
+        content.style.height = `${Math.max(50, contentHeight)}px`;
+      }
+    }
   }
   
   // Remove event listeners, including those with capture phase
@@ -1213,9 +1249,8 @@ function stopResize() {
   document.removeEventListener('mouseup', stopResize, true);
   document.removeEventListener('mouseup', stopResize);
   
-  // Save the full position and dimensions
-  // This ensures that all changes from resizing are properly saved
-  saveCurrentPosition();
+  // Save the position
+  saveDimensionsOnly();
   
   // Release the operation lock
   (async () => {
@@ -1298,21 +1333,6 @@ function stopDrag() {
     await PositionScaleManager.releaseOperationLock();
   })();
 }
-
-// // Handle scale change
-// function handleScaleChange(newScale: number) {
-//   const container = document.getElementById('ga-notes-root');
-//   if (!container) return;
-  
-//   // Limit scale to reasonable values
-//   newScale = Math.max(0.5, Math.min(2, newScale));
-  
-//   container.style.transform = `scale(${newScale})`;
-//   currentPositionScale.scale = newScale;
-  
-//   // Save the new position and scale
-//   saveCurrentPosition();
-// }
 
 async function injectApp() {
   // Don't inject if already injected

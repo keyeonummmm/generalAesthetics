@@ -32,7 +32,7 @@
   width: 300px;
   height: 550px;
   z-index: 9999;
-  transition: transform 0.2s ease, width 0.1s ease, height 0.1s ease;
+  transition: transform 0.2s ease;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -40,12 +40,12 @@
 /* Add a visible border when resizing to provide feedback */
 #ga-notes-root.resizing {
   border: 2px solid rgba(0, 120, 215, 0.7);
-  transition: transform 0.2s ease, width 0s linear, height 0s linear;
+  transition: none;
 }
 
 /* Add rule for popup container during resize */
 #ga-notes-root.resizing .popup-container {
-  transition: width 0s linear, height 0s linear !important;
+  transition: none !important;
 }
 
 /* Resize handles */
