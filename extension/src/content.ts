@@ -7,12 +7,31 @@ import Popup from './components/Popup';
 import './styles/index.css';
 import { ScreenshotSelection } from './UI/selection';
 import { ThemeManager, createThemeToggle } from './UI/component';
-import { PositionScale, PositionScaleManager } from './lib/PositionScaleManager';
+import { PositionScale, PositionScaleManager, OperationType } from './lib/PositionScaleManager';
 
 // Establish connection with background script
 let port = chrome.runtime.connect({ name: 'content-script' });
 let reconnectionAttempts = 0;
 const MAX_RECONNECTION_ATTEMPTS = 5;
+
+// // Global variables for Debugging
+// const DEBUG = {
+//   RESIZE: true,
+//   DRAG: true,
+//   POSITION: true,
+//   EVENT: true,
+//   STATE: true,
+//   VISIBILITY: true
+// };
+
+// // Debug logger utility
+// function debugLog(category: keyof typeof DEBUG, message: string, data?: any) {
+//   if (DEBUG[category]) {
+//     const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+//     const dataStr = data ? ` | Data: ${JSON.stringify(data)}` : '';
+//     console.log(`[${timestamp}][${category}] ${message}${dataStr}`);
+//   }
+// }
 
 // Function to handle port reconnection
 function setupConnection() {
@@ -76,54 +95,118 @@ let startHeight = 0;
 let startTop = 0;
 let startLeft = 0;
 let startScale = 1;
+let resizeAnimationFrameId: number | null = null;
 let currentPositionScale: PositionScale = PositionScaleManager.getDefaultPosition();
+
+// Add new variables to track resize cursor state
+let resizeObserver: ResizeObserver | null = null;
+let resizeEdges = {
+  top: false,
+  right: false,
+  bottom: false,
+  left: false
+};
+
+// Object to store container event handlers for proper cleanup
+interface EventHandlers {
+  mousemove?: (e: MouseEvent) => void;
+  mouseleave?: (e: MouseEvent) => void;
+  mousedown?: (e: MouseEvent) => void;
+  headerMousedown?: (e: MouseEvent) => void;
+  headerDblclick?: (e: MouseEvent) => void;
+}
+
+const containerEventHandlers: EventHandlers = {};
 
 // Add global functions to hide/show the extension UI
 export function hideExtensionUI() {
+  const container = document.getElementById('ga-notes-root');
+  if (container) {
+    container.style.transition = 'none';
+    container.style.display = 'none';
+  }
+  
+  // Then handle shadow DOM elements if available
   if (shadowRootRef) {
-    // Hide the shadow root element
+    // Try to hide app container
+    const appContainer = shadowRootRef.querySelector('.app-container') as HTMLElement;
+    if (appContainer) {
+      appContainer.style.transition = 'none';
+      appContainer.style.display = 'none';
+    }
+    
+    // Try to hide any ga-root element
     const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
     if (rootElement) {
       rootElement.style.transition = 'none';
       rootElement.style.display = 'none';
     }
-    
-    // Hide the container element
-    const container = document.getElementById('ga-notes-root');
-    if (container) {
-      container.style.transition = 'none';
-      container.style.display = 'none';
-    }
-    
-    // Update visibility state
-    isInterfaceVisible = false;
-    
-    // Remove the event capture when UI is hidden
-    removeEventCapture();
+  }
+  
+  // Update visibility state
+  isInterfaceVisible = false;
+  
+  // Remove the event capture when UI is hidden
+  removeEventCapture();
+  
+  // Important: Inform the background script that the UI is now hidden
+  try {
+    chrome.runtime.sendMessage({ type: 'interfaceStateChanged', isVisible: false });
+  } catch (e) {
+    console.warn('Failed to notify background script about UI state change:', e);
   }
 }
 
 export function showExtensionUI() {
+  // Show the container element first
+  const container = document.getElementById('ga-notes-root');
+  if (container) {
+    container.style.transition = 'none';
+    container.style.display = 'block';
+  }
+  
+  // Then handle shadow DOM elements if available
   if (shadowRootRef) {
-    // Show the shadow root element
+    // Try to show app container
+    const appContainer = shadowRootRef.querySelector('.app-container') as HTMLElement;
+    if (appContainer) {
+      appContainer.style.transition = 'none';
+      appContainer.style.display = 'block';
+    }
+    
+    // Try to show any ga-root element
     const rootElement = shadowRootRef.querySelector('.ga-root') as HTMLElement;
     if (rootElement) {
       rootElement.style.transition = 'none';
       rootElement.style.display = 'block';
     }
-    
-    // Show the container element
-    const container = document.getElementById('ga-notes-root');
-    if (container) {
-      container.style.transition = 'none';
-      container.style.display = 'block';
-    }
-    
-    // Update visibility state
-    isInterfaceVisible = true;
-    
-    // Add the event capture when UI is shown
-    setupEventCapture();
+  }
+  
+  // Update visibility state
+  isInterfaceVisible = true;
+  
+  // Add the event capture when UI is shown
+  setupEventCapture();
+  
+  // Reapply position and scale to ensure proper layout
+  PositionScaleManager.getPositionForCurrentTab()
+    .then(position => {
+      applyPositionAndScale(position);
+
+      // Refresh resize handles with a small delay to ensure DOM is ready
+      setTimeout(() => {
+        setupDragAndResize();
+      }, 100);
+    })
+    .catch(error => {
+      console.warn('Failed to get position on show:', error);
+    });
+  
+  // Inform the background script that the UI is now visible
+  try {
+    chrome.runtime.sendMessage({ type: 'interfaceStateChanged', isVisible: true });
+  } catch (e) {
+    console.warn('Failed to notify background script about UI state change:', e);
   }
 }
 
@@ -147,19 +230,10 @@ function setupEventCapture() {
 function preventHostPageInterference(e: Event) {
   const container = document.getElementById('ga-notes-root');
   if (!container) return;
-  
-  // Only stop propagation if the event is not coming from our extension
-  // and our extension is visible
   if (isInterfaceVisible && !container.contains(e.target as Node)) {
-    // Don't stop events within our extension
     return;
   }
-  
-  // For events originating in our extension, let them propagate normally
-  // within our extension, but don't let them affect the host page
   if (isInterfaceVisible && container.contains(e.target as Node)) {
-    // Let the event propagate within our extension
-    // We'll handle stopping propagation at the container boundary
     return;
   }
 }
@@ -285,16 +359,23 @@ function captureEvent(e: Event) {
 }
 
 // Apply position and scale to the UI
-function applyPositionAndScale(position: PositionScale) {
-  if (!shadowRootRef) return;
+function applyPositionAndScale(position: PositionScale, direction: string = '') {
+  // Select the root container directly from document
+  const container = document.getElementById('ga-notes-root') as HTMLElement;
+  if (!container) {
+    return;
+  }
   
-  const container = document.getElementById('ga-notes-root');
-  if (!container) return;
+  // If we're resizing, ensure the resizing class is applied
+  // This will disable transitions for immediate/synchronous resizing
+  if (direction && !container.classList.contains('resizing')) {
+    container.classList.add('resizing');
+  }
   
   // Get viewport dimensions
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
-  
+
   // Ensure position is within viewport bounds
   const minVisiblePortion = 50;
   
@@ -314,15 +395,68 @@ function applyPositionAndScale(position: PositionScale) {
   y = Math.max(-effectiveHeight + minVisiblePortion, y);
   y = Math.min(viewportHeight - minVisiblePortion, y);
   
-  // Apply position and size
+  // Determine transform origin based on resize direction
+  let transformOrigin = 'top left'; // Default
+  
+  if (direction) {
+    // Adjust transform origin based on which edges are being resized
+    const hasNorth = direction.includes('n');
+    const hasSouth = direction.includes('s');
+    const hasEast = direction.includes('e');
+    const hasWest = direction.includes('w');
+    
+    const vertical = hasNorth ? 'top' : hasSouth ? 'bottom' : 'center';
+    const horizontal = hasWest ? 'left' : hasEast ? 'right' : 'center';
+    
+    transformOrigin = `${horizontal} ${vertical}`;
+  }
+  
+  // Apply position, dimensions and scale to the root container
   container.style.position = 'fixed';
   container.style.left = `${x}px`;
   container.style.top = `${y}px`;
   container.style.width = `${position.width}px`;
   container.style.height = `${position.height}px`;
   container.style.transform = `scale(${position.scale})`;
-  container.style.transformOrigin = 'top left';
+  container.style.transformOrigin = transformOrigin;
   container.style.zIndex = '9999';
+  container.style.display = 'block';
+  
+  // Apply dimensions to popup-container inside shadow DOM
+  if (shadowRootRef) {
+    // First find the popup-container
+    const popupContainer = shadowRootRef.querySelector('.popup-container') as HTMLElement;
+    if (popupContainer) {
+      // Apply dimensions to popup-container - ensure synchronous updates
+      // Force layout reflow to apply changes immediately
+      popupContainer.style.width = `${position.width}px`;
+      void popupContainer.offsetWidth; // Force reflow
+      popupContainer.style.height = `${position.height}px`;
+      void popupContainer.offsetHeight; // Force reflow
+    }
+    
+    // Also apply to the app container as before
+    const appContainer = shadowRootRef.querySelector('.app-container') as HTMLElement;
+    if (appContainer) {
+      // For the app container, we need to set all dimensions but keep it relative to its parent
+      appContainer.style.position = 'relative';
+      appContainer.style.width = '100%';
+      appContainer.style.height = '100%';
+      appContainer.style.display = 'block';
+      appContainer.style.top = '0';
+      appContainer.style.left = '0';
+      appContainer.style.zIndex = '1';
+      appContainer.style.overflow = 'hidden';
+      appContainer.style.borderRadius = '8px';
+    }
+    
+    // Update any content area to maintain proper layout
+    const content = shadowRootRef.querySelector('.content') as HTMLElement;
+    if (content) {
+      content.style.height = 'auto';
+      content.style.flex = '1';
+    }
+  }
   
   // Store current position and scale with constrained values
   currentPositionScale = { 
@@ -334,151 +468,571 @@ function applyPositionAndScale(position: PositionScale) {
 
 // Save current position and scale to cache
 async function saveCurrentPosition() {
-  await PositionScaleManager.updatePositionForCurrentTab(currentPositionScale);
+  try {
+    await PositionScaleManager.updatePositionForCurrentTab(currentPositionScale);
+    
+    // Notify background script about the position change
+    try {
+      // Get the current tab ID
+      const tabId = await PositionScaleManager.initTabId();
+  
+      // Send the position to the background script
+      chrome.runtime.sendMessage({
+        type: 'saveResizeState',
+        tabId,
+        position: currentPositionScale
+      }).then(() => {
+      }).catch(error => {
+        console.warn('Failed to notify background script about position change:', error);
+      });
+    } catch (error) {
+      console.warn('Failed to get tab ID for position notification:', error);
+    }
+  } catch (error) {
+    console.warn('Failed to save position:', error);
+  }
 }
 
-// Add event listeners for drag and resize
+// Save only position (x, y) during drag operations
+async function savePositionOnly() {
+  try {
+    const position = { x: currentPositionScale.x, y: currentPositionScale.y };
+    await PositionScaleManager.updatePositionOnly(position);
+    try {
+      // Get the current tab ID
+      const tabId = await PositionScaleManager.initTabId();
+      
+      // Send the position to the background script
+      chrome.runtime.sendMessage({
+        type: 'savePositionOnly',
+        tabId,
+        position,
+        operationType: OperationType.DRAGGING
+      }).then(() => {
+      }).catch(error => {
+        console.warn('Failed to notify background script about position change:', error);
+      });
+    } catch (error) {
+      console.warn('Failed to get tab ID for position notification:', error);
+    }
+  } catch (error) {
+    console.warn('Failed to save position:', error);
+  }
+}
+
+// Save only dimensions (width, height) during resize operations
+async function saveDimensionsOnly() {
+  try {
+    const dimensions = { 
+      width: currentPositionScale.width, 
+      height: currentPositionScale.height 
+    };
+    await PositionScaleManager.updateDimensionsOnly(dimensions);
+    try {
+      // Get the current tab ID
+      const tabId = await PositionScaleManager.initTabId();
+      
+      // Send the dimensions to the background script
+      chrome.runtime.sendMessage({
+        type: 'saveDimensionsOnly',
+        tabId,
+        dimensions,
+        operationType: OperationType.RESIZING
+      }).then(() => {
+      }).catch(error => {
+        console.warn('Failed to notify background script about dimension change:', error);
+      });
+    } catch (error) {
+      console.warn('Failed to get tab ID for dimensions notification:', error);
+    }
+  } catch (error) {
+    console.warn('Failed to save dimensions:', error);
+  }
+}
+
 function setupDragAndResize() {
   const container = document.getElementById('ga-notes-root');
   if (!container || !shadowRootRef) return;
   
-  // Create resize handles
+  // Reset state flags when setting up
+  isResizing = false;
+  isDragging = false;
+  resizeDirection = '';
+  
+  // Clear any existing event listeners to avoid duplicates
+  removeResizeHandlers();
+  removeDragHandlers();
+  
+  // Setup visual resize handles
+  setupResizeHandles(container);
+  
+  // Add edge detection for resize cursor
+  setupEdgeResizing(container);
+  
+  // Setup dragging functionality (separate from resizing)
+  setupDragging(container);
+}
+
+// Function to remove existing resize handlers to avoid duplicates
+function removeResizeHandlers() {
+  const container = document.getElementById('ga-notes-root');
+  if (!container) return;
+  
+  // Remove resize handles from container
+  const handles = container.querySelectorAll('.resize-handle');
+  handles.forEach(handle => handle.remove());
+  
+  // Remove resize handles from shadow DOM
+  if (shadowRootRef) {
+    const shadowHandles = shadowRootRef.querySelectorAll('.resize-handle');
+    shadowHandles.forEach(handle => handle.remove());
+    
+    // Also check app container specifically
+    const appContainer = shadowRootRef.querySelector('.app-container');
+    if (appContainer) {
+      const appHandles = appContainer.querySelectorAll('.resize-handle');
+      appHandles.forEach(handle => handle.remove());
+    }
+    
+    // Also check popup container
+    const popupContainer = shadowRootRef.querySelector('.popup-container');
+    if (popupContainer) {
+      const popupHandles = popupContainer.querySelectorAll('.resize-handle');
+      popupHandles.forEach(handle => handle.remove());
+    }
+  }
+  
+  // Remove event listeners from container
+  if (containerEventHandlers.mousemove) {
+    container.removeEventListener('mousemove', containerEventHandlers.mousemove);
+    containerEventHandlers.mousemove = undefined;
+  }
+  
+  if (containerEventHandlers.mouseleave) {
+    container.removeEventListener('mouseleave', containerEventHandlers.mouseleave);
+    containerEventHandlers.mouseleave = undefined;
+  }
+  
+  if (containerEventHandlers.mousedown) {
+    container.removeEventListener('mousedown', containerEventHandlers.mousedown);
+    containerEventHandlers.mousedown = undefined;
+  }
+  
+  // Remove document event listeners for resize
+  document.removeEventListener('mousemove', handleResize, true);
+  document.removeEventListener('mousemove', handleResize); // non-capture version
+  document.removeEventListener('mouseup', stopResize, true);
+  document.removeEventListener('mouseup', stopResize); // non-capture version
+  
+  // Reset resize state
+  isResizing = false;
+  resizeDirection = '';
+  
+  // Reset resize edges
+  resizeEdges.top = false;
+  resizeEdges.right = false;
+  resizeEdges.bottom = false;
+  resizeEdges.left = false;
+  
+  // Reset cursor and remove resizing class
+  if (container) {
+    container.style.cursor = 'default';
+    container.classList.remove('resizing');
+  }
+}
+
+// Setup resize handles
+function setupResizeHandles(container: HTMLElement) {
+  
+  // Remove any existing resize handles first
+  removeResizeHandlers();
+  
+  // Create resize handles for each direction
   const directions = ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw'];
+  
+  // Find the popup-container inside shadow DOM
+  let targetContainer = container;
+  if (shadowRootRef) {
+    // First try to use popup-container as the primary target
+    const popupContainer = shadowRootRef.querySelector('.popup-container') as HTMLElement;
+    if (popupContainer) {
+      targetContainer = popupContainer;
+    } else {
+      // Fallback to app-container if popup-container not found
+      const appContainer = shadowRootRef.querySelector('.app-container') as HTMLElement;
+      if (appContainer) {
+        targetContainer = appContainer;
+      }
+    }
+  }
+  
   directions.forEach(dir => {
     const handle = document.createElement('div');
     handle.className = `resize-handle resize-${dir}`;
+    handle.setAttribute('data-direction', dir);
+    
+    // Set explicit z-index to ensure handles are above other elements
+    handle.style.zIndex = '10001';
     handle.style.position = 'absolute';
     
-    // Position the handles
+    // Position the handle based on direction
     switch(dir) {
       case 'n':
         handle.style.top = '0';
         handle.style.left = '0';
         handle.style.right = '0';
-        handle.style.height = '5px';
+        handle.style.height = '14px';
         handle.style.cursor = 'ns-resize';
-        break;
-      case 'e':
-        handle.style.top = '0';
-        handle.style.right = '0';
-        handle.style.bottom = '0';
-        handle.style.width = '5px';
-        handle.style.cursor = 'ew-resize';
         break;
       case 's':
         handle.style.bottom = '0';
         handle.style.left = '0';
         handle.style.right = '0';
-        handle.style.height = '5px';
+        handle.style.height = '14px';
         handle.style.cursor = 'ns-resize';
         break;
-      case 'w':
+      case 'e':
+        handle.style.right = '0';
         handle.style.top = '0';
-        handle.style.left = '0';
         handle.style.bottom = '0';
-        handle.style.width = '5px';
+        handle.style.width = '14px';
+        handle.style.cursor = 'ew-resize';
+        break;
+      case 'w':
+        handle.style.left = '0';
+        handle.style.top = '0';
+        handle.style.bottom = '0';
+        handle.style.width = '14px';
         handle.style.cursor = 'ew-resize';
         break;
       case 'ne':
         handle.style.top = '0';
         handle.style.right = '0';
-        handle.style.width = '10px';
-        handle.style.height = '10px';
+        handle.style.width = '20px';
+        handle.style.height = '20px';
         handle.style.cursor = 'ne-resize';
+        break;
+      case 'nw':
+        handle.style.top = '0';
+        handle.style.left = '0';
+        handle.style.width = '20px';
+        handle.style.height = '20px';
+        handle.style.cursor = 'nw-resize';
         break;
       case 'se':
         handle.style.bottom = '0';
         handle.style.right = '0';
-        handle.style.width = '10px';
-        handle.style.height = '10px';
+        handle.style.width = '20px';
+        handle.style.height = '20px';
         handle.style.cursor = 'se-resize';
         break;
       case 'sw':
         handle.style.bottom = '0';
         handle.style.left = '0';
-        handle.style.width = '10px';
-        handle.style.height = '10px';
+        handle.style.width = '20px';
+        handle.style.height = '20px';
         handle.style.cursor = 'sw-resize';
-        break;
-      case 'nw':
-        handle.style.top = '0';
-        handle.style.left = '0';
-        handle.style.width = '10px';
-        handle.style.height = '10px';
-        handle.style.cursor = 'nw-resize';
         break;
     }
     
-    // Add resize event listeners
-    handle.addEventListener('mousedown', (e) => {
+    // Add the handle to the container
+    targetContainer.appendChild(handle);
+
+    handle.addEventListener('mousedown', (async (e: MouseEvent) => {
       e.preventDefault();
-      e.stopPropagation();
+      e.stopPropagation(); // Prevent event propagation
+      
+      // Try to lock the resize operation
+      const lockAcquired = await PositionScaleManager.lockOperation(OperationType.RESIZING);
+      if (!lockAcquired) {
+        return;
+      }
+      
       isResizing = true;
+      isDragging = false; // Ensure dragging is off
+      
       resizeDirection = dir;
+      container.classList.add('resizing');
+      
+      const rect = container.getBoundingClientRect();
       startX = e.clientX;
       startY = e.clientY;
-      startWidth = container.offsetWidth;
-      startHeight = container.offsetHeight;
-      startTop = container.offsetTop;
-      startLeft = container.offsetLeft;
+      startWidth = rect.width;
+      startHeight = rect.height;
+      startLeft = rect.left;
+      startTop = rect.top;
       startScale = currentPositionScale.scale;
-      
-      document.addEventListener('mousemove', handleResize);
-      document.addEventListener('mouseup', stopResize);
-    });
-    
-    container.appendChild(handle);
+      // Add event listeners for resize
+      document.addEventListener('mousemove', handleResize, true);
+      document.addEventListener('mouseup', stopResize, true);
+    }) as unknown as EventListener);
   });
+}
+
+// Setup dragging
+function setupDragging(container: HTMLElement) {
+  // Find the header element for dragging
+  const headerElement = shadowRootRef ? shadowRootRef.querySelector('.header') : null;
   
-  // Find the header element for drag functionality
-  const header = shadowRootRef.querySelector('.header') as HTMLElement;
-  if (header) {
-    // Make header draggable
-    header.style.cursor = 'move';
-    header.addEventListener('mousedown', (e) => {
-      // Ignore if clicking on buttons in the header
-      if ((e.target as HTMLElement).tagName === 'BUTTON' || 
-          (e.target as HTMLElement).closest('button')) {
-        return;
-      }
-      
-      e.preventDefault();
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = container.offsetLeft;
-      startTop = container.offsetTop;
-      
-      document.addEventListener('mousemove', handleDrag);
-      document.addEventListener('mouseup', stopDrag);
-    });
+  if (!headerElement) {
+    return;
+  }
+  // Header mousedown handler
+  const headerMousedownHandler = async (e: MouseEvent) => {
+    // Don't initiate drag if clicking on certain elements (like buttons)
+    if ((e.target as HTMLElement).closest('.header-action')) {
+      return;
+    }
     
-    // Double click to reset position and scale
-    header.addEventListener('dblclick', async (e) => {
-      // Ignore if double-clicking on buttons in the header
-      if ((e.target as HTMLElement).tagName === 'BUTTON' || 
-          (e.target as HTMLElement).closest('button')) {
-        return;
-      }
-      
-      e.preventDefault();
+    e.preventDefault();
+    e.stopPropagation(); // Stop event propagation
+    
+    // Try to lock the drag operation
+    const lockAcquired = await PositionScaleManager.lockOperation(OperationType.DRAGGING);
+    if (!lockAcquired) {
+      return;
+    }
+    
+    isDragging = true;
+    isResizing = false; // Ensure resizing is off
+    
+    // Get starting positions
+    const rect = container.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    // Add mousemove and mouseup event listeners
+    document.addEventListener('mousemove', handleDrag, true);
+    document.addEventListener('mouseup', stopDrag, true);
+  };
+  
+  // Double-click handler to expand/collapse
+  const headerDblclickHandler = async (e: MouseEvent) => {
+    // Don't handle double-click if clicking on certain elements (like buttons)
+    if ((e.target as HTMLElement).closest('.header-action')) {
+      return;
+    }
+    
+    e.preventDefault();
+    e.stopPropagation(); // Stop event propagation
+    
+    // Reset to default position and scale
+    try {
       const defaultPosition = await PositionScaleManager.resetToDefault();
       applyPositionAndScale(defaultPosition);
+      await saveCurrentPosition();
+    } catch (error) {
+      console.error('Failed to reset position:', error);
+    }
+  };
+  
+  // Add header event listeners
+  headerElement.addEventListener('mousedown', headerMousedownHandler as unknown as EventListener);
+  headerElement.addEventListener('dblclick', headerDblclickHandler as unknown as EventListener);
+}
+
+// Add new function for edge-based resizing
+function setupEdgeResizing(container: HTMLElement) {
+  // Increase threshold for edge detection
+  const EDGE_THRESHOLD = 15; // Increased from 10px
+  // Store references to event listeners for proper cleanup
+  const mousemoveHandler = (e: MouseEvent) => {
+    if (isDragging || isResizing) return;
+    
+    // Find the header element - we don't want to show resize cursor on the header
+    const header = shadowRootRef?.querySelector('.header') as HTMLElement;
+    if (header && header.contains(e.target as Node)) {
+      // If we're over the header, let the header handle cursor (for dragging)
+      return;
+    }
+    
+    const rect = container.getBoundingClientRect();
+    
+    // Calculate effective threshold based on current scale
+    const effectiveThreshold = EDGE_THRESHOLD / currentPositionScale.scale;
+    
+    // Compute relative mouse position
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+    
+    // Previous edge state for change detection
+    const prevEdges = { ...resizeEdges };
+    
+    // Detect which edges the mouse is near using the effective threshold
+    resizeEdges.top = offsetY <= effectiveThreshold;
+    resizeEdges.right = rect.width - offsetX <= effectiveThreshold;
+    resizeEdges.bottom = rect.height - offsetY <= effectiveThreshold;
+    resizeEdges.left = offsetX <= effectiveThreshold;
+    
+    // Log if edge detection state changed
+    if (prevEdges.top !== resizeEdges.top || 
+        prevEdges.right !== resizeEdges.right || 
+        prevEdges.bottom !== resizeEdges.bottom || 
+        prevEdges.left !== resizeEdges.left) {
+    }
+    
+    // Set appropriate cursor based on position
+    let newCursor = 'default';
+    
+    if (resizeEdges.top && resizeEdges.left) {
+      newCursor = 'nw-resize';
+    } else if (resizeEdges.top && resizeEdges.right) {
+      newCursor = 'ne-resize';
+    } else if (resizeEdges.bottom && resizeEdges.left) {
+      newCursor = 'sw-resize';
+    } else if (resizeEdges.bottom && resizeEdges.right) {
+      newCursor = 'se-resize';
+    } else if (resizeEdges.top) {
+      newCursor = 'n-resize';
+    } else if (resizeEdges.right) {
+      newCursor = 'e-resize';
+    } else if (resizeEdges.bottom) {
+      newCursor = 's-resize';
+    } else if (resizeEdges.left) {
+      newCursor = 'w-resize';
+    }
+    
+    if (container.style.cursor !== newCursor) {
+      container.style.cursor = newCursor;
+    }
+  };
+  
+  // Reset cursor when mouse leaves
+  const mouseleaveHandler = () => {
+    if (!isDragging && !isResizing) {
+      container.style.cursor = 'default';
+      // Reset resize edges when mouse leaves
+      resizeEdges.top = false;
+      resizeEdges.right = false;
+      resizeEdges.bottom = false;
+      resizeEdges.left = false;
+    }
+  };
+  
+  // Store the mousedown handler for later cleanup
+  const mousedownHandler = (e: MouseEvent) => {
+    // Skip if we're already dragging or resizing
+    if (isDragging || isResizing) {
+      return;
+    }
+    
+    // Skip if we're clicking on the header (header handles dragging)
+    const header = shadowRootRef?.querySelector('.header') as HTMLElement;
+    if (header && header.contains(e.target as Node)) {
+      return;
+    }
+    
+    // Only proceed if we're on an edge
+    if (!(resizeEdges.top || resizeEdges.right || resizeEdges.bottom || resizeEdges.left)) {
+      return;
+    }
+    
+    // If we've gotten here, we're definitely resizing, so stop the event
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Set resizing state immediately to prevent drag from interfering
+    isResizing = true;
+    isDragging = false;
+    
+    // Determine resize direction based on edges
+    let direction = '';
+    if (resizeEdges.top) direction += 'n';
+    if (resizeEdges.right) direction += 'e';
+    if (resizeEdges.bottom) direction += 's';
+    if (resizeEdges.left) direction += 'w';
+    resizeDirection = direction;
+    
+    startX = e.clientX;
+    startY = e.clientY;
+    startWidth = container.offsetWidth;
+    startHeight = container.offsetHeight;
+    startTop = container.offsetTop;
+    startLeft = container.offsetLeft;
+    startScale = currentPositionScale.scale;
+    // Add a class to indicate we're resizing
+    container.classList.add('resizing');
+    
+    // Use capture phase to ensure our handlers get called first
+    document.addEventListener('mousemove', handleResize, true);
+    document.addEventListener('mouseup', stopResize, true);
+  };
+  
+  // Register event listeners and store references for cleanup
+  container.addEventListener('mousemove', mousemoveHandler);
+  container.addEventListener('mouseleave', mouseleaveHandler);
+  container.addEventListener('mousedown', mousedownHandler);
+  
+  // Store references for cleanup
+  containerEventHandlers.mousemove = mousemoveHandler;
+  containerEventHandlers.mouseleave = mouseleaveHandler;
+  containerEventHandlers.mousedown = mousedownHandler;
+  
+  // Create a ResizeObserver to maintain content layout during resize
+  if (shadowRootRef) {
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
+    
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === container && shadowRootRef) {
+          // When container is resized, adjust content area
+          const content = shadowRootRef.querySelector('.content') as HTMLElement;
+          const header = shadowRootRef.querySelector('.header') as HTMLElement;
+          const footer = shadowRootRef.querySelector('.footer') as HTMLElement;
+          const tabList = shadowRootRef.querySelector('.tab-list') as HTMLElement;
+          
+          if (content && header && footer) {
+            // Calculate available height for content
+            const headerHeight = header.offsetHeight;
+            const footerHeight = footer.offsetHeight;
+            const containerHeight = container.offsetHeight;
+            
+            // Set content height to fill available space
+            content.style.height = `${containerHeight - headerHeight - footerHeight}px`;
+            
+            // Ensure tab-list doesn't change height
+            if (tabList) {
+              tabList.style.flexShrink = '0';
+            }
+          }
+        }
+      }
     });
+    
+    resizeObserver.observe(container);
   }
 }
 
 // Handle resize event
 function handleResize(e: MouseEvent) {
-  if (!isResizing) return;
+  if (!isResizing || isDragging) {
+    return; // Skip if we're not resizing or if we're dragging
+  }
   
   const container = document.getElementById('ga-notes-root');
-  if (!container) return;
+  if (!container) {
+    return;
+  }
   
   e.preventDefault();
+  e.stopPropagation(); // Stop propagation to prevent other handlers from running
   
-  const dx = e.clientX - startX;
-  const dy = e.clientY - startY;
+  // Adjust for scaling effect on mouse movement
+  const scale = currentPositionScale.scale;
+  const dx = (e.clientX - startX) / scale;
+  const dy = (e.clientY - startY) / scale;
+  
+  // Define minimum dimensions
+  const minWidth = 300;
+  const minHeight = 200;
+  
+  // Calculate the right and bottom edge positions of the original element
+  // These are the positions we want to maintain when resizing from left/top
+  const startRight = startLeft + startWidth;
+  const startBottom = startTop + startHeight;
   
   let newWidth = startWidth;
   let newHeight = startHeight;
@@ -487,57 +1041,82 @@ function handleResize(e: MouseEvent) {
   
   // Calculate new dimensions based on resize direction
   if (resizeDirection.includes('e')) {
-    newWidth = startWidth + dx;
+    // East/right edge - adjust width only
+    newWidth = Math.max(minWidth, startWidth + dx);
   }
-  if (resizeDirection.includes('s')) {
-    newHeight = startHeight + dy;
-  }
+  
   if (resizeDirection.includes('w')) {
-    newWidth = startWidth - dx;
-    newLeft = startLeft + dx;
+    // West/left edge - adjust left position and width
+    if (dx > 0) {
+      // Pushing in (moving right) - decrease width, increase left
+      // Limit how far we can push in to maintain minimum width
+      const maxDeltaX = startWidth - minWidth;
+      const adjustedDx = Math.min(dx, maxDeltaX);
+      
+      newLeft = startLeft + adjustedDx;
+      newWidth = startRight - newLeft; // Maintain right edge position
+    } else {
+      // Pulling out (moving left) - increase width, decrease left
+      // No minimum width constraint needed here as we're increasing width
+      newLeft = startLeft + dx; // Move left edge to the left
+      newWidth = startRight - newLeft; // Maintain right edge position
+    }
   }
+  
+  if (resizeDirection.includes('s')) {
+    // South/bottom edge - adjust height only
+    newHeight = Math.max(minHeight, startHeight + dy);
+  }
+  
   if (resizeDirection.includes('n')) {
-    newHeight = startHeight - dy;
-    newTop = startTop + dy;
+    // North/top edge - adjust top position and height
+    if (dy > 0) {
+      // Pushing in (moving down) - decrease height, increase top
+      // Limit how far we can push in to maintain minimum height
+      const maxDeltaY = startHeight - minHeight;
+      const adjustedDy = Math.min(dy, maxDeltaY);
+      
+      newTop = startTop + adjustedDy;
+      newHeight = startBottom - newTop; // Maintain bottom edge position
+    } else {
+      // Pulling out (moving up) - increase height, decrease top
+      // No minimum height constraint needed here as we're increasing height
+      newTop = startTop + dy; // Move top edge up
+      newHeight = startBottom - newTop; // Maintain bottom edge position
+    }
   }
   
-  // Apply minimum dimensions
-  const minWidth = 300;
-  const minHeight = 200;
+  // Handle corner resizing (combination of edge behaviors)
+  if (resizeDirection === 'ne') {
+    // Northeast corner - combine north and east behaviors
+    // Already handled by the individual 'n' and 'e' cases
+  } else if (resizeDirection === 'se') {
+    // Southeast corner - combine south and east behaviors
+    // Already handled by the individual 's' and 'e' cases
+  } else if (resizeDirection === 'sw') {
+    // Southwest corner - combine south and west behaviors
+    // Already handled by the individual 's' and 'w' cases
+  } else if (resizeDirection === 'nw') {
+    // Northwest corner - combine north and west behaviors
+    // Already handled by the individual 'n' and 'w' cases
+  }
   
+  // Ensure minimum dimensions are respected
   if (newWidth < minWidth) {
     if (resizeDirection.includes('w')) {
-      newLeft = startLeft + (startWidth - minWidth);
+      // If resizing from left, adjust left position to maintain right edge
+      newLeft = startRight - minWidth;
     }
     newWidth = minWidth;
   }
   
   if (newHeight < minHeight) {
     if (resizeDirection.includes('n')) {
-      newTop = startTop + (startHeight - minHeight);
+      // If resizing from top, adjust top position to maintain bottom edge
+      newTop = startBottom - minHeight;
     }
     newHeight = minHeight;
   }
-  
-  // Calculate scale based on size changes
-  let newScale = currentPositionScale.scale;
-  
-  // Calculate horizontal and vertical scale factors
-  const horizontalScaleFactor = newWidth / startWidth;
-  const verticalScaleFactor = newHeight / startHeight;
-  
-  // Use the appropriate scale factor based on which direction is being resized
-  if (resizeDirection.includes('e') || resizeDirection.includes('w')) {
-    newScale = startScale * horizontalScaleFactor;
-  } else if (resizeDirection.includes('n') || resizeDirection.includes('s')) {
-    newScale = startScale * verticalScaleFactor;
-  } else if (['ne', 'se', 'sw', 'nw'].includes(resizeDirection)) {
-    // For corners, use the larger of the two scale factors
-    newScale = startScale * Math.max(horizontalScaleFactor, verticalScaleFactor);
-  }
-  
-  // Limit scale to reasonable values
-  newScale = Math.max(0.5, Math.min(2, newScale));
   
   // Get viewport dimensions
   const viewportWidth = window.innerWidth;
@@ -546,54 +1125,122 @@ function handleResize(e: MouseEvent) {
   // Ensure the container stays within viewport bounds
   const minVisiblePortion = 50;
   
-  // Constrain horizontal position
-  newLeft = Math.max(-newWidth * newScale + minVisiblePortion, newLeft);
+  // Calculate effective dimensions with scale
+  const effectiveWidth = newWidth * scale;
+  const effectiveHeight = newHeight * scale;
+  
+  // Store original values before constraining
+  const preConstraintLeft = newLeft;
+  const preConstraintTop = newTop;
+  
+  // Constrain horizontal position accounting for scale
+  newLeft = Math.max(-effectiveWidth + minVisiblePortion, newLeft);
   newLeft = Math.min(viewportWidth - minVisiblePortion, newLeft);
   
-  // Constrain vertical position
-  newTop = Math.max(-newHeight * newScale + minVisiblePortion, newTop);
+  // Constrain vertical position accounting for scale
+  newTop = Math.max(-effectiveHeight + minVisiblePortion, newTop);
   newTop = Math.min(viewportHeight - minVisiblePortion, newTop);
   
-  // Update container style
-  container.style.width = `${newWidth}px`;
-  container.style.height = `${newHeight}px`;
-  container.style.top = `${newTop}px`;
-  container.style.left = `${newLeft}px`;
-  container.style.transform = `scale(${newScale})`;
+  // If we had to constrain the position, adjust the dimensions to maintain the opposite edge
+  if (resizeDirection.includes('w') && preConstraintLeft !== newLeft) {
+    // Left edge was constrained, adjust width to maintain right edge position
+    newWidth = startRight - newLeft;
+  }
   
-  // Update current position
+  if (resizeDirection.includes('n') && preConstraintTop !== newTop) {
+    // Top edge was constrained, adjust height to maintain bottom edge position
+    newHeight = startBottom - newTop;
+  }
+  
+  // Update the currentPositionScale values
   currentPositionScale.width = newWidth;
   currentPositionScale.height = newHeight;
   currentPositionScale.x = newLeft;
   currentPositionScale.y = newTop;
-  currentPositionScale.scale = newScale;
+  
+  // Apply the changes using the consistent method
+  // Use requestAnimationFrame to improve performance and prevent stuttering
+  if (!resizeAnimationFrameId) {
+    resizeAnimationFrameId = requestAnimationFrame(() => {
+      // Pass the resize direction to applyPositionAndScale
+      applyPositionAndScale(currentPositionScale, resizeDirection);
+      resizeAnimationFrameId = null;
+    });
+  }
+  
+  // Update the content area to maintain header and footer heights
+  if (shadowRootRef) {
+    const content = shadowRootRef.querySelector('.content') as HTMLElement;
+    const tabList = shadowRootRef.querySelector('.tab-list') as HTMLElement;
+    
+    if (content) {
+      // Let the content area flex to fill available space
+      // The header and footer will maintain their heights due to their CSS
+      content.style.height = 'auto';
+      content.style.flex = '1';
+      
+      // Ensure tab-list doesn't change height during resize
+      if (tabList) {
+        tabList.style.flexShrink = '0';
+      }
+    }
+  }
 }
 
 // Stop resize event
 function stopResize() {
-  if (!isResizing) return;
-  
+  if (!isResizing) {
+    return;
+  }
   isResizing = false;
   resizeDirection = '';
   
+  // Cancel any pending animation frames
+  if (resizeAnimationFrameId !== null) {
+    cancelAnimationFrame(resizeAnimationFrameId);
+    resizeAnimationFrameId = null;
+  }
+  
+  // Remove the resizing class
+  const container = document.getElementById('ga-notes-root');
+  if (container) {
+    container.classList.remove('resizing');
+  }
+  
+  // Remove event listeners, including those with capture phase
+  document.removeEventListener('mousemove', handleResize, true);
   document.removeEventListener('mousemove', handleResize);
+  document.removeEventListener('mouseup', stopResize, true);
   document.removeEventListener('mouseup', stopResize);
   
-  // Save the new position and scale
+  // Save the full position and dimensions
+  // This ensures that all changes from resizing are properly saved
   saveCurrentPosition();
+  
+  // Release the operation lock
+  (async () => {
+    await PositionScaleManager.releaseOperationLock();
+  })();
 }
 
 // Handle drag event
 function handleDrag(e: MouseEvent) {
-  if (!isDragging) return;
+  if (!isDragging || isResizing) {
+    return;
+  }
   
   const container = document.getElementById('ga-notes-root');
-  if (!container) return;
+  if (!container) {
+    return;
+  }
   
   e.preventDefault();
+  e.stopPropagation(); // Stop event propagation
   
-  const dx = e.clientX - startX;
-  const dy = e.clientY - startY;
+  // Adjust for scaling effect on mouse movement
+  const scale = currentPositionScale.scale;
+  const dx = (e.clientX - startX);
+  const dy = (e.clientY - startY);
   
   let newLeft = startLeft + dx;
   let newTop = startTop + dy;
@@ -611,67 +1258,93 @@ function handleDrag(e: MouseEvent) {
   const minVisiblePortion = 50;
   
   // Constrain horizontal position
+  const oldLeft = newLeft;
   newLeft = Math.max(-containerWidth + minVisiblePortion, newLeft);
   newLeft = Math.min(viewportWidth - minVisiblePortion, newLeft);
   
   // Constrain vertical position
+  const oldTop = newTop;
   newTop = Math.max(-containerHeight + minVisiblePortion, newTop);
   newTop = Math.min(viewportHeight - minVisiblePortion, newTop);
   
-  // Update container style
-  container.style.left = `${newLeft}px`;
-  container.style.top = `${newTop}px`;
-  
-  // Update current position
+  // Update the position scale object first to ensure consistency
   currentPositionScale.x = newLeft;
   currentPositionScale.y = newTop;
+  
+  // Use applyPositionAndScale to consistently update the UI
+  // Use 'center center' for dragging to ensure smooth movement
+  applyPositionAndScale(currentPositionScale, 'center center');
 }
 
 // Stop drag event
 function stopDrag() {
-  if (!isDragging) return;
+  if (!isDragging) {
+    return;
+  }
   
   isDragging = false;
   
+  // Remove event listeners, including those with capture phase
+  document.removeEventListener('mousemove', handleDrag, true);
   document.removeEventListener('mousemove', handleDrag);
+  document.removeEventListener('mouseup', stopDrag, true);
   document.removeEventListener('mouseup', stopDrag);
   
-  // Save the new position and scale
-  saveCurrentPosition();
+  // Save the new position using the position-only method
+  savePositionOnly();
+  
+  // Release the operation lock
+  (async () => {
+    await PositionScaleManager.releaseOperationLock();
+  })();
 }
 
-// Handle scale change
-function handleScaleChange(newScale: number) {
-  const container = document.getElementById('ga-notes-root');
-  if (!container) return;
+// // Handle scale change
+// function handleScaleChange(newScale: number) {
+//   const container = document.getElementById('ga-notes-root');
+//   if (!container) return;
   
-  // Limit scale to reasonable values
-  newScale = Math.max(0.5, Math.min(2, newScale));
+//   // Limit scale to reasonable values
+//   newScale = Math.max(0.5, Math.min(2, newScale));
   
-  container.style.transform = `scale(${newScale})`;
-  currentPositionScale.scale = newScale;
+//   container.style.transform = `scale(${newScale})`;
+//   currentPositionScale.scale = newScale;
   
-  // Save the new position and scale
-  saveCurrentPosition();
-}
+//   // Save the new position and scale
+//   saveCurrentPosition();
+// }
 
 async function injectApp() {
-  // Prevent multiple initializations
-  if (isInitialized) {
-    console.debug('App already initialized');
-    return null;
+  // Don't inject if already injected
+  if (document.getElementById('ga-notes-root')) {
+    return document.getElementById('ga-notes-root');
   }
-
-  // Create container
-  const container = document.createElement('div');
-  container.id = 'ga-notes-root';
+  // Create root container for the extension
+  const rootContainer = document.createElement('div');
+  rootContainer.id = 'ga-notes-root';
+  document.body.appendChild(rootContainer);
+  // Create shadow DOM for style isolation
+  shadowRootRef = rootContainer.attachShadow({ mode: 'closed' });
   
-  // Create shadow root and store reference
-  shadowRootRef = container.attachShadow({ mode: 'closed' });
+  // Get a fresh position for this tab
+  try {
+    const position = await PositionScaleManager.getPositionForCurrentTab();
+    // Apply the position immediately to avoid flicker
+    currentPositionScale = position;
+    // Use top left transform origin for initial positioning
+    applyPositionAndScale(position, 'top left');
+  } catch (error) {
+    console.error('Failed to get position:', error);
+    // Use default position
+    const defaultPosition = await PositionScaleManager.getDefaultPosition();
+    currentPositionScale = defaultPosition;
+    // Use top right transform origin for default positioning
+    applyPositionAndScale(defaultPosition, 'top right');
+  }
   
   // Create app container inside shadow root
   const appContainer = document.createElement('div');
-  appContainer.className = 'ga-notes-container';
+  appContainer.className = 'ga-notes-container app-container';
   
   // Initialize theme manager and create theme toggle
   themeToggle = createThemeToggle(appContainer);
@@ -684,9 +1357,6 @@ async function injectApp() {
   shadowRootRef.appendChild(style);
   shadowRootRef.appendChild(appContainer);
   
-  // Append main container to body
-  document.body.appendChild(container);
-
   // Create root and render
   root = createRoot(appContainer);
   root.render(React.createElement(Popup));
@@ -705,7 +1375,20 @@ async function injectApp() {
   // Setup event capture to prevent events from reaching the host page
   setupEventCapture();
   
-  return appContainer;
+  // Log initialization for debugging
+  console.debug('App initialized with resize functionality');
+  
+  // Add a small delay to ensure all elements are properly rendered before setting up resize
+  setTimeout(() => {
+    // Refresh resize handles
+    setupDragAndResize();
+  }, 500);
+  
+  // Set initial visibility
+  isInterfaceVisible = getInterfaceVisibility();
+  updateInterfaceVisibility(isInterfaceVisible);
+  
+  return rootContainer;
 }
 
 // Add a function to get current visibility state
@@ -727,17 +1410,16 @@ async function toggleInterface(forceState?: boolean) {
         }
         isInterfaceVisible = true;
       }
-    } else if (shadowRootRef) {
-      // Get the root container
-      const rootContainer = document.getElementById('ga-notes-root');
-      
+    } else {
       // Check actual current visibility if forceState isn't provided
       const currentVisibility = getInterfaceVisibility();
       isInterfaceVisible = forceState !== undefined ? forceState : !currentVisibility;
       
-      // Update root container element
-      if (rootContainer) {
-        rootContainer.style.display = isInterfaceVisible ? 'block' : 'none';
+      // Based on the new visibility state, call the appropriate function
+      if (isInterfaceVisible) {
+        showExtensionUI();
+      } else {
+        hideExtensionUI();
       }
     }
     
@@ -763,12 +1445,18 @@ async function toggleInterface(forceState?: boolean) {
 
 // Export function to update visibility state
 export function updateInterfaceVisibility(visible: boolean) {
-  isInterfaceVisible = visible;
+  const container = document.getElementById('ga-notes-root');
+  if (container) {
+    container.style.display = visible ? 'block' : 'none';
+  }
 }
 
-// Export function to toggle theme
+// Function to toggle the theme
 export function toggleTheme() {
-  themeToggle?.toggle().catch(error => {
+  if (!themeToggle) return;
+  
+  // Use the toggle method from the themeToggle object
+  themeToggle.toggle().catch(error => {
     console.error('Failed to toggle theme:', error);
   });
 }
@@ -813,6 +1501,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
     });
     return true;
+  } else if (message.type === 'updateResizeState') {
+    // Handle resize state updates from background script
+    if (message.position) {
+      applyPositionAndScale(message.position);
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false, error: 'No position data provided' });
+    }
+  } else if (message.type === 'updatePosition') {
+    // Apply the new position and scale
+    applyPositionAndScale(message.position, 'center center');
+    sendResponse({ success: true });
+    return true;
   }
   return true;
 });
@@ -832,9 +1533,67 @@ window.addEventListener('resize', () => {
   // assume it's at the default position and adjust it
   if (Math.abs(window.innerWidth - currentRightEdgePosition) < 50) {
     const newPosition = PositionScaleManager.getDefaultPosition();
-    applyPositionAndScale(newPosition);
+    // Use top right transform origin for default positioning
+    applyPositionAndScale(newPosition, 'top right');
     saveCurrentPosition();
   }
 });
+
+// Clean up resources when extension is unloaded
+function cleanup() {
+  // Remove event listeners
+  document.removeEventListener('keydown', captureEvent);
+  
+  // Clean up resize event listeners
+  removeResizeHandlers();
+  
+  // Clean up drag event listeners
+  removeDragHandlers();
+  
+  // Disconnect resize observer if it exists
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  
+  // Remove the root element from the page
+  const rootElement = document.getElementById('ga-notes-root');
+  if (rootElement) {
+    rootElement.remove();
+  }
+  
+  // Reset state
+  shadowRootRef = null;
+  isInterfaceVisible = false;
+}
+
+// New function to clean up drag event listeners
+function removeDragHandlers() {
+  if (!shadowRootRef) return;
+  
+  // Find header element
+  const header = shadowRootRef.querySelector('.header') as HTMLElement;
+  if (!header) return;
+  
+  // Remove drag event handlers from header
+  if (containerEventHandlers.headerMousedown) {
+    header.removeEventListener('mousedown', containerEventHandlers.headerMousedown);
+    containerEventHandlers.headerMousedown = undefined;
+  }
+  
+  if (containerEventHandlers.headerDblclick) {
+    header.removeEventListener('dblclick', containerEventHandlers.headerDblclick);
+    containerEventHandlers.headerDblclick = undefined;
+  }
+  
+  // Remove document event listeners for drag
+  document.removeEventListener('mousemove', handleDrag, true);
+  document.removeEventListener('mousemove', handleDrag);
+  document.removeEventListener('mouseup', stopDrag, true);
+  document.removeEventListener('mouseup', stopDrag);
+  
+  // Reset drag state
+  isDragging = false;
+}
 
 export {};

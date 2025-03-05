@@ -8,11 +8,10 @@ import '../styles/components/components.css';
 import { NotesManager } from './NotesManager';
 import { Note } from '../lib/DBProxy';
 import { AttachmentMenu } from './AttachmentMenu';
-import { DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
 import { TabManagerRef } from './TabManager';
-import { shadowRootRef, hideExtensionUI, showExtensionUI } from '../content';
-import { processImage, ImageProcessingOptions } from '../lib/imageProcessor';
+import { hideExtensionUI, showExtensionUI } from '../content';
+import { processImage } from '../lib/imageProcessor';
 import { createLazyLoadableImage } from '../lib/imageProcessor';
 
 const Popup: React.FC = () => {
@@ -247,19 +246,28 @@ const Popup: React.FC = () => {
           <ActionButton 
             type="close" 
             onClick={() => {
-              chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' })
-                .catch(error => {
-                  console.warn('Failed to send hide UI message:', error);
-                  // Fallback to direct DOM manipulation if message fails
-                  try {
-                    const container = document.getElementById('ga-notes-root');
-                    if (container) {
-                      container.style.display = 'none';
+              try {
+                // First try to use the direct function
+                hideExtensionUI();
+              } catch (error) {
+                console.warn('Failed to hide UI directly:', error);
+                
+                // Fallback to message passing
+                chrome.runtime.sendMessage({ type: 'HIDE_EXTENSION_UI' })
+                  .catch(msgError => {
+                    console.warn('Failed to send hide UI message:', msgError);
+                    
+                    // Last resort: direct DOM manipulation
+                    try {
+                      const container = document.getElementById('ga-notes-root');
+                      if (container) {
+                        container.style.display = 'none';
+                      }
+                    } catch (domError) {
+                      console.error('Failed to hide UI via DOM:', domError);
                     }
-                  } catch (domError) {
-                    console.error('Failed to hide UI via DOM:', domError);
-                  }
-                });
+                  });
+              }
             }}
             title="Close"
             hasUnsavedChanges={hasUnsavedChanges}

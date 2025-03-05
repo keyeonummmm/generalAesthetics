@@ -32,30 +32,52 @@
   width: 300px;
   height: 550px;
   z-index: 9999;
-  transform-origin: top left;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, width 0.1s ease, height 0.1s ease;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Add a visible border when resizing to provide feedback */
+#ga-notes-root.resizing {
+  border: 2px solid rgba(0, 120, 215, 0.7);
+  transition: transform 0.2s ease, width 0s linear, height 0s linear;
+}
+
+/* Add rule for popup container during resize */
+#ga-notes-root.resizing .popup-container {
+  transition: width 0s linear, height 0s linear !important;
 }
 
 /* Resize handles */
 .ga-notes-container .resize-handle {
   position: absolute;
-  z-index: 10000;
+  z-index: 10001;
   background-color: transparent;
+  transition: background-color 0.2s ease, opacity 0.3s ease;
+  opacity: 0.2;
 }
 
 .ga-notes-container .resize-handle:hover {
-  background-color: rgba(0, 120, 215, 0.3);
+  background-color: rgba(0, 120, 215, 0.5);
+  opacity: 1;
 }
 
+/* Make resize handles visible when resizing */
+.ga-notes-container.resizing .resize-handle {
+  background-color: rgba(0, 120, 215, 0.7);
+  opacity: 1;
+}
+
+/* Make the resize handles larger and more accessible */
 .ga-notes-container .resize-n, .ga-notes-container .resize-s {
-  height: 5px;
+  height: 14px;
   left: 0;
   right: 0;
   cursor: ns-resize;
 }
 
 .ga-notes-container .resize-e, .ga-notes-container .resize-w {
-  width: 5px;
+  width: 14px;
   top: 0;
   bottom: 0;
   cursor: ew-resize;
@@ -77,9 +99,10 @@
   left: 0;
 }
 
+/* Make corner handles larger and more accessible */
 .ga-notes-container .resize-ne, .ga-notes-container .resize-nw, .ga-notes-container .resize-se, .ga-notes-container .resize-sw {
-  width: 10px;
-  height: 10px;
+  width: 20px;
+  height: 20px;
 }
 
 .ga-notes-container .resize-ne {
@@ -104,6 +127,16 @@
   bottom: 0;
   left: 0;
   cursor: sw-resize;
+}
+
+/* Make resize handles more visible on hover */
+#ga-notes-root:hover .resize-handle {
+  opacity: 0.5;
+}
+
+/* Reset hover opacity when resizing is in progress */
+#ga-notes-root.resizing:hover .resize-handle {
+  opacity: 1;
 }
 
 /* Draggable header */

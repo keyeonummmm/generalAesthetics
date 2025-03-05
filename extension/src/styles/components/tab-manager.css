@@ -19,6 +19,9 @@
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-color);
   overflow-x: auto;
+  flex-shrink: 0;
+  height: auto;
+  min-height: 40px;
 }
 
 .ga-notes-container .tab {
@@ -94,6 +97,8 @@
 .ga-notes-container .tab-content {
   flex: 1;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .ga-notes-container .new-tab-button {

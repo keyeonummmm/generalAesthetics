@@ -31,7 +31,9 @@ chrome.action.onClicked.addListener(async (tab) => {
       });
     }
 
+    // Use the same message type that's used by the close button
     await chrome.tabs.sendMessage(tab.id, { type: 'toggleInterface' });
+    console.log('Sent toggleInterface message to tab', tab.id);
   } catch (error) {
     console.error('Failed to toggle interface:', error);
   }
@@ -203,8 +205,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(results => {
         console.log(`Sent hide UI message to ${results.length} tabs`, 
           `(${results.filter(r => r.success).length} successful)`);
+        sendResponse({ success: true, results });
+      })
+      .catch(error => {
+        console.error('Failed to broadcast hide UI message:', error);
+        sendResponse({ success: false, error: String(error) });
       });
-    sendResponse({ success: true });
     return true;
   }
   
@@ -244,6 +250,121 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else {
       sendResponse({ tabId: -1, error: 'Could not determine tab ID' });
     }
+    return true;
+  }
+
+  // Handle resize-related messages
+  if (message.type === 'saveResizeState') {
+    // Use a promise-based approach since we're in a non-async listener
+    (async () => {
+      try {
+        // Forward the resize state to the appropriate tab
+        const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
+        if (tabId) {
+          // Store the resize state in the background script
+          const result = await sendMessageToTab(tabId, {
+            type: 'updateResizeState',
+            position: message.position,
+            operationType: message.operationType || 'none'
+          });
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        console.error('Error handling resize state:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  // Handle position-only updates (for drag operations)
+  if (message.type === 'savePositionOnly') {
+    (async () => {
+      try {
+        const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
+        if (tabId) {
+          const result = await sendMessageToTab(tabId, {
+            type: 'updatePositionOnly',
+            position: { x: message.position.x, y: message.position.y },
+            operationType: 'dragging'
+          });
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        console.error('Error handling position update:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  // Handle dimensions-only updates (for resize operations)
+  if (message.type === 'saveDimensionsOnly') {
+    (async () => {
+      try {
+        const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
+        if (tabId) {
+          const result = await sendMessageToTab(tabId, {
+            type: 'updateDimensionsOnly',
+            dimensions: { width: message.dimensions.width, height: message.dimensions.height },
+            operationType: 'resizing'
+          });
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        console.error('Error handling dimensions update:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  // Handle operation locking
+  if (message.type === 'lockOperation') {
+    (async () => {
+      try {
+        const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
+        if (tabId) {
+          const result = await sendMessageToTab(tabId, {
+            type: 'lockOperation',
+            operation: message.operation
+          });
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        console.error('Error handling operation lock:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  // Handle operation release
+  if (message.type === 'releaseOperation') {
+    (async () => {
+      try {
+        const tabId = message.tabId || (sender.tab ? sender.tab.id : null);
+        if (tabId) {
+          const result = await sendMessageToTab(tabId, {
+            type: 'releaseOperation'
+          });
+          sendResponse({ success: true, result });
+        } else {
+          sendResponse({ success: false, error: 'No tab ID provided' });
+        }
+      } catch (error) {
+        console.error('Error handling operation release:', error);
+        sendResponse({ success: false, error: String(error) });
+      }
+    })();
     return true;
   }
 });
@@ -286,34 +407,18 @@ chrome.runtime.onSuspend.addListener(async () => {
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   try {
     console.log(`Tab removed: ${tabId}`);
-    
-    // Since we're now using tab IDs directly for position caching,
-    // we don't need to look up URLs anymore. We can just clear the position
-    // for the removed tab ID directly.
-    
-    // Send a message to clear the position cache for this tab ID
-    // This is a no-op if the tab is already closed, but helps ensure cleanup
     try {
       chrome.runtime.sendMessage({ 
         type: 'clearPositionForTab', 
         tabId 
       });
-    } catch (error) {
-      // Tab is likely already closed, which is expected
-      console.log(`Could not send clearPositionForTab message: ${error}`);
-    }
+    } catch (error) {}
     
     // Also handle any tab associations if needed
     const associations = await TabAssociationManager.initAssociations();
     const pageUrls = Object.keys(associations.pageToTab).filter(
       pageUrl => associations.pageToTab[pageUrl] === tabId.toString()
     );
-    
-    // Update associations as needed
-    for (const pageUrl of pageUrls) {
-      console.log(`Removing tab association for URL: ${pageUrl}`);
-      // Handle any other cleanup needed for tab associations
-    }
   } catch (error) {
     console.error('Error handling tab removal:', error);
   }
@@ -328,13 +433,21 @@ async function sendMessageToTab(tabId: number, message: any) {
   }
   
   try {
-    const response = await chrome.tabs.sendMessage(tabId, message);
+    // Add a timeout to prevent hanging message sends
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Message send timeout')), 5000);
+    });
+    
+    const messagePromise = chrome.tabs.sendMessage(tabId, message);
+    
+    // Race the message send against the timeout
+    const response = await Promise.race([messagePromise, timeoutPromise]);
     return { success: true, response };
   } catch (error) {
     console.log(`Failed to send message to tab ${tabId}:`, error);
     // If connection fails, remove from loaded tabs
     loadedTabs.delete(tabId);
-    return { success: false, error };
+    return { success: false, error: String(error) };
   }
 }
 

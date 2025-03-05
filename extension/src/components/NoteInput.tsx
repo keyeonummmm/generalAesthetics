@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
-import { TabCacheManager } from '../lib/TabCacheManager';
 import '../styles/components/note-input.css';
 
 interface NoteInputProps {
