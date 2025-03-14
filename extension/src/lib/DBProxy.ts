@@ -1,5 +1,6 @@
 import { Note } from './notesDB';
 import { Attachment } from './Attachment';
+import { v4 as uuidv4 } from 'uuid';
 
 // Re-export types from notesDB
 export type { Note, Attachment };
@@ -65,6 +66,9 @@ export class DBProxy {
     content: string,
     attachments?: Attachment[]
   ): Promise<Note> {
+    // Determine if content is rich text (contains HTML tags)
+    const isRichText = /<[a-z][\s\S]*>/i.test(content);
+    
     return this.sendMessage('createNote', [title, content, attachments]);
   }
 
@@ -72,10 +76,13 @@ export class DBProxy {
     id: string,
     title: string,
     content: string,
-    expectedVersion?: number,
+    version?: number,
     attachments?: Attachment[]
   ): Promise<Note> {
-    return this.sendMessage('updateNote', [id, title, content, expectedVersion, attachments]);
+    // Determine if content is rich text (contains HTML tags)
+    const isRichText = /<[a-z][\s\S]*>/i.test(content);
+    
+    return this.sendMessage('updateNote', [id, title, content, version, attachments]);
   }
 
   static async addAttachment(noteId: string,

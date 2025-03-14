@@ -5,6 +5,7 @@ export interface Note {
   id: string;
   title: string;
   content: string;
+  isRichText?: boolean;
   createdAt: string;
   updatedAt: string;
   version: number;
@@ -131,10 +132,14 @@ export class NotesDB {
       throw new Error('Note must have either title, content, or attachments');
     }
 
+    // Determine if content is rich text (contains HTML tags)
+    const isRichText = /<[a-z][\s\S]*>/i.test(content);
+
     const newNote: Note = {
       id: uuidv4(),
       title: title.trim() || 'Untitled Note',
       content: content.trim(),
+      isRichText,
       createdAt: timestamp,
       updatedAt: timestamp,
       version: 1,
@@ -190,10 +195,14 @@ export class NotesDB {
       return processedAttachment;
     }) || [];
 
+    // Determine if content is rich text (contains HTML tags)
+    const isRichText = /<[a-z][\s\S]*>/i.test(content);
+
     const updatedNote: Note = {
       ...existingNote,
       title: title.trim() || existingNote.title,
       content: content.trim(),
+      isRichText,
       updatedAt: timestamp,
       version: existingNote.version + 1,
       attachments: processedAttachments,

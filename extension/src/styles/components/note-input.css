@@ -104,6 +104,9 @@
   position: relative;
   z-index: 2;
   flex-shrink: 0; /* Prevent title from shrinking */
+  word-wrap: break-word; /* Allow long words to break */
+  overflow-wrap: break-word;
+  caret-color: black; /* Ensure cursor is visible with any text color */
 }
 
 /* Content input styles */
@@ -121,6 +124,9 @@
   white-space: pre-wrap;
   position: relative;
   z-index: 2;
+  word-wrap: break-word; /* Allow long words to break */
+  overflow-wrap: break-word;
+  caret-color: black; /* Ensure cursor is visible with any text color */
 }
 
 /* Placeholder styles using data-placeholder attribute */
@@ -183,4 +189,125 @@
     padding-right: 20px;
     padding-bottom: 30px;
   }
+}
+
+/* Rich text formatting styles */
+.ga-notes-container .format-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 5px 0;
+  position: relative;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 8px;
+}
+
+.ga-notes-container .format-button {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.ga-notes-container .format-button:hover {
+  background-color: #e8e8e8;
+}
+
+.ga-notes-container .format-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ga-notes-container .format-options-group {
+  display: flex;
+  gap: 5px;
+}
+
+.ga-notes-container .format-divider {
+  width: 1px;
+  height: 24px;
+  background-color: #ddd;
+  margin: 0 2px;
+}
+
+.ga-notes-container .format-popup-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #ddd;
+  background-color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0 8px;
+  transition: all 0.2s ease;
+}
+
+.ga-notes-container .format-popup-button:hover {
+  background-color: #f0f0f0;
+  border-color: #ccc;
+}
+
+.ga-notes-container .format-popup-button.active {
+  background-color: #e6e6e6;
+  border-color: #bbb;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ga-notes-container .clear-format-button {
+  color: #ff4d4f;
+  font-size: 16px;
+}
+
+.ga-notes-container .clear-format-button:hover {
+  background-color: #fff1f0;
+  border-color: #ff4d4f;
+}
+
+/* Rich text content styles */
+.ga-notes-container .content-input-seamless b, 
+.ga-notes-container .content-input-seamless strong {
+  font-weight: bold;
+}
+
+.ga-notes-container .content-input-seamless i, 
+.ga-notes-container .content-input-seamless em {
+  font-style: italic;
+}
+
+.ga-notes-container .content-input-seamless u {
+  text-decoration: underline;
+}
+
+/* Ensure proper spacing for formatted content */
+.ga-notes-container .content-input-seamless p {
+  margin: 0 0 10px 0;
+}
+
+.ga-notes-container .content-input-seamless p:last-child {
+  margin-bottom: 0;
+}
+
+/* Continuous formatting indicator */
+.ga-notes-container .format-toolbar.continuous-format {
+  background-color: rgba(24, 144, 255, 0.05);
+}
+
+/* Cursor styling for better visibility */
+.ga-notes-container .content-input-seamless:focus {
+  caret-color: #1890ff;
 }

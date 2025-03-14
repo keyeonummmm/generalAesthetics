@@ -6,6 +6,7 @@ export interface Tab {
   id: string;
   title: string;
   content: string;
+  isRichText?: boolean;
   attachments?: AttachmentReference[];
   isNew: boolean;
   version?: number;

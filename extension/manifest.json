@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "General Aesthetics Notes",
   "version": "1.0.0",
-  "description": "A browser extension for quick note-taking",
+  "description": "A browser extension for quick note-taking with rich text formatting",
   
   "action": {
     "default_icon": "icons/icon128.png"
@@ -25,7 +25,9 @@
     "activeTab",
     "scripting",
     "tabs",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "clipboardRead",
+    "clipboardWrite"
   ],
 
   "host_permissions": [
@@ -34,5 +36,12 @@
 
   "icons": {
     "128": "icons/icon128.png"
-  }
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["*.js", "*.chunk.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 } 

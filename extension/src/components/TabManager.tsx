@@ -11,6 +11,7 @@ interface Tab {
   id: string;
   title: string;
   content: string;
+  isRichText?: boolean; // Add flag to indicate rich text content
   attachments?: AttachmentReference[];
   loadedAttachments?: Attachment[]; // New field to store loaded attachments
   isNew: boolean;
@@ -1014,8 +1015,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
   
   const handleContentChange = (tabId: string, content: string) => {
+    // Check if the content has HTML formatting
+    const isRichText = /<[a-z][\s\S]*>/i.test(content);
+    
     updateTabState(tabId, {
       content,
+      isRichText,
       syncStatus: 'pending'
     });
   };
@@ -1119,6 +1124,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         }
       }
 
+      // Determine if content is rich text (contains HTML tags)
+      const isRichText = /<[a-z][\s\S]*>/i.test(tab.content);
+
       let savedNote: Note;
       
       if (!tab.noteId) {
@@ -1145,6 +1153,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             ...t,
             noteId: savedNote.id,
             version: savedNote.version,
+            isRichText: savedNote.isRichText, // Update isRichText flag
             syncStatus: 'synced' as const
           };
           

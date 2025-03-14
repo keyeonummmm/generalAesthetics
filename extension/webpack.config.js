@@ -11,6 +11,8 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: '[name].js',
+    chunkFilename: '[name].chunk.js',
+    publicPath: '',
     clean: true,
   },
   module: {
@@ -54,6 +56,16 @@ module.exports = {
       }),
     }),
   ],
+  optimization: {
+    splitChunks: {
+      chunks: 'async',
+      name: (module, chunks, cacheGroupKey) => {
+        return `vendor-${cacheGroupKey}`;
+      },
+      minSize: 30000,
+    },
+    runtimeChunk: false
+  },
   devtool: process.env.NODE_ENV === 'production' 
     ? false 
     : 'cheap-module-source-map',
