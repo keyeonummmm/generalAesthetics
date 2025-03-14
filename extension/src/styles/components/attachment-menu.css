@@ -15,16 +15,56 @@
 
 .ga-notes-container .attachment-menu-content {
   position: absolute;
-  top: 100%;
-  right: 0;
+  bottom: 100%; /* Position above the button */
+  left: 0; /* Align with the left edge of the button */
   background-color: var(--bg-color);
-  min-width: 200px;
+  min-width: 220px; /* Slightly wider to accommodate content */
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   border-radius: 4px;
-  padding: 8px 0;
-  z-index: 10;
-  margin-top: 8px;
+  padding: 12px 0; /* Increased padding for better spacing */
+  z-index: 1000; /* Higher z-index to ensure it appears above other elements */
+  margin-bottom: 8px;
   border: 1px solid var(--border-color);
+  /* Add media query check to handle small screens */
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* For screens where the menu might go off the top, position it below instead */
+@media screen and (max-height: 400px) {
+  .ga-notes-container .attachment-menu-content {
+    bottom: auto;
+    top: 100%;
+    margin-top: 8px;
+    margin-bottom: 0;
+  }
+}
+
+/* Add styling for the close button */
+.ga-notes-container .attachment-menu-content .close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  font-size: 16px;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.ga-notes-container .attachment-menu-content .close-btn:hover {
+  background-color: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.ga-notes-container .attachment-options {
+  padding-top: 8px; /* Add padding to accommodate the close button */
 }
 
 .ga-notes-container .attachment-option {
@@ -33,6 +73,11 @@
   padding: 8px 16px;
   cursor: pointer;
   transition: background-color 0.2s;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  text-align: left;
 }
 
 .ga-notes-container .attachment-option:hover {
@@ -48,7 +93,7 @@
   justify-content: center;
 }
 
-.ga-notes-container .attachment-option-label {
+.ga-notes-container .attachment-option .label {
   font-size: 14px;
 }
 
@@ -56,4 +101,30 @@
   font-size: 12px;
   opacity: 0.7;
   margin-top: 2px;
+}
+
+/* Add styling for loading indicator */
+.ga-notes-container .loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  font-size: 14px;
+}
+
+.ga-notes-container .loading-indicator .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: var(--text-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

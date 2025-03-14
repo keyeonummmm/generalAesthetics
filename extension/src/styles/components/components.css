@@ -309,8 +309,6 @@
 
 /* Attachments Section */
 .ga-notes-container .attachments-section {
-  margin-top: var(--ga-spacing-unit);
-  border-top: 1px solid var(--border-color);
   padding-top: var(--ga-spacing-unit);
 }
 
@@ -318,13 +316,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--ga-spacing-unit);
-}
-
-.ga-notes-container .attachments-title {
-  font-size: 14px;
-  color: var(--text-color);
-  opacity: 0.8;
 }
 
 .ga-notes-container .add-attachment-btn {

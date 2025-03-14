@@ -26,6 +26,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   onAttachmentRemove
 }) => {
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const [isAttachmentSectionExpanded, setIsAttachmentSectionExpanded] = useState(true);
   const titleRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   
@@ -64,6 +65,13 @@ const NoteInput: React.FC<NoteInputProps> = ({
     }
   }, [title, content]);
 
+  // When new attachments are added, ensure the attachment section is expanded
+  useEffect(() => {
+    if (attachments && attachments.length > 0) {
+      setIsAttachmentSectionExpanded(true);
+    }
+  }, [attachments?.length]);
+
   const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
     
     if (titleRef.current) {
@@ -78,61 +86,82 @@ const NoteInput: React.FC<NoteInputProps> = ({
     }
   };
   
+  const toggleAttachmentSection = () => {
+    setIsAttachmentSectionExpanded(!isAttachmentSectionExpanded);
+  };
+  
   const handleKeyDown = (e: React.KeyboardEvent) => {};
   const handleMouseDown = (e: React.MouseEvent) => {};
   const handleClick = (e: React.MouseEvent) => {};
   const handleFocus = (e: React.FocusEvent) => {};
   const handleBlur = (e: React.FocusEvent) => {};
 
+  // Determine if we should show the attachments panel
+  const hasAttachments = attachments && attachments.length > 0;
+
   return (
-    <div className="note-input">
-      <div 
-        ref={titleRef}
-        className="title-input-seamless"
-        contentEditable
-        onInput={handleTitleInput}
-        onKeyDown={handleKeyDown}
-        onMouseDown={handleMouseDown}
-        onClick={handleClick}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        data-placeholder="Title"
-        suppressContentEditableWarning
-      ></div>
+    <div className="note-input-container">
+      <div className={`note-content-section ${hasAttachments && !isAttachmentSectionExpanded ? 'with-collapsed-attachments' : ''}`}>
+        <div 
+          ref={titleRef}
+          className="title-input-seamless"
+          contentEditable
+          onInput={handleTitleInput}
+          onKeyDown={handleKeyDown}
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          data-placeholder="Title"
+          suppressContentEditableWarning
+        ></div>
+        
+        <div 
+          ref={contentRef}
+          className="content-input-seamless"
+          contentEditable
+          onInput={handleContentInput}
+          onKeyDown={handleKeyDown}
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          data-placeholder="Content goes here..."
+          suppressContentEditableWarning
+        ></div>
+      </div>
       
-      <div 
-        ref={contentRef}
-        className="content-input-seamless"
-        contentEditable
-        onInput={handleContentInput}
-        onKeyDown={handleKeyDown}
-        onMouseDown={handleMouseDown}
-        onClick={handleClick}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        data-placeholder="Start typing your note here..."
-        suppressContentEditableWarning
-      ></div>
-      
-      {isLoadingAttachments && (
-        <div className="attachments-loading">
-          Loading attachments...
-        </div>
-      )}
-      
-      {attachments && attachments.length > 0 && (
-        <div className="attachments-container">
-          <h3>Attachments</h3>
-          <div className="attachments-list">
-            {attachments.map((attachment, index) => (
-              <AttachmentOperation
-                key={`${attachment.id}-${index}`}
-                attachment={attachment}
-                onRemove={onAttachmentRemove}
-                isPending={attachment.syncStatus === 'pending'}
-              />
-            ))}
+      {hasAttachments && (
+        <div className={`attachments-section ${isAttachmentSectionExpanded ? 'expanded' : 'collapsed'}`}>
+          <div className="attachments-header">
+            <button 
+              className="toggle-attachments-btn" 
+              onClick={toggleAttachmentSection}
+              title={isAttachmentSectionExpanded ? "Hide attachments" : "Show attachments"}
+            >
+              {isAttachmentSectionExpanded ? '▶' : '◀'}
+            </button>
           </div>
+          
+          {isAttachmentSectionExpanded && (
+            <>
+              {isLoadingAttachments && (
+                <div className="attachments-loading">
+                  Loading...
+                </div>
+              )}
+              <div className="attachments-list">
+                {attachments.map((attachment, index) => (
+                  <AttachmentOperation
+                    key={`${attachment.id}-${index}`}
+                    attachment={attachment}
+                    onRemove={onAttachmentRemove}
+                    isPending={attachment.syncStatus === 'pending'}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -1318,7 +1318,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         {tabs.map(tab => (
           <div 
             key={tab.id}
-            className={`tab ${activeTabId === tab.id ? 'active' : ''} ${tab.pinned ? 'pinned' : ''}`}
+            className={`tab ${activeTabId === tab.id ? 'active' : ''} ${tab.pinned ? 'pinned' : ''} ${tab.syncStatus}`}
             onClick={() => handleTabClick(tab.id)}
           >
             {tab.pinned && <span className="pin-indicator" title="Pinned">📌</span>}
@@ -1348,6 +1348,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 ×
               </button>
             </div>
+            <div className={`sync-indicator ${tab.syncStatus}`} title={`Status: ${tab.syncStatus}`}></div>
           </div>
         ))}
         <button 
@@ -1363,15 +1364,11 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           const activeTab = tabs.find(tab => tab.id === activeTabId);
           if (!activeTab) return null;
           
+          // Check if the active tab has attachments
+          const hasAttachments = activeTab.loadedAttachments && activeTab.loadedAttachments.length > 0;
+          
           return (
-            <div className="tab-wrapper">
-              <div className="tab-metadata">
-                {activeTab.version && <span className="version">v{activeTab.version}</span>}
-                <span className={`sync-status ${activeTab.syncStatus}`}>
-                  {activeTab.syncStatus}
-                </span>
-                {loadingAttachments && <span className="loading-attachments">Loading attachments...</span>}
-              </div>
+            <div className={`tab-wrapper ${hasAttachments ? 'has-attachments' : ''}`}>
               <NoteInput
                 title={activeTab.title}
                 content={activeTab.content}

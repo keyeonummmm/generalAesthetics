@@ -233,9 +233,6 @@ const Popup: React.FC = () => {
             onClick={() => setIsNotesManagerOpen(true)} 
             title="View Notes" 
           />
-          <div className="drag-handle-indicator">
-            <span>☰</span>
-          </div>
         </div>
         <div className="header-right">
           <ActionButton 

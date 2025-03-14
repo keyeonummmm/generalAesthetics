@@ -37,35 +37,9 @@
   overflow: hidden;
 }
 
-/* Add a visible border when resizing to provide feedback */
-#ga-notes-root.resizing {
-  border: 2px solid rgba(0, 120, 215, 0.7);
-  transition: none;
-}
-
 /* Add rule for popup container during resize */
 #ga-notes-root.resizing .popup-container {
   transition: none !important;
-}
-
-/* Resize handles */
-.ga-notes-container .resize-handle {
-  position: absolute;
-  z-index: 10001;
-  background-color: transparent;
-  transition: background-color 0.2s ease, opacity 0.3s ease;
-  opacity: 0.2;
-}
-
-.ga-notes-container .resize-handle:hover {
-  background-color: rgba(0, 120, 215, 0.5);
-  opacity: 1;
-}
-
-/* Make resize handles visible when resizing */
-.ga-notes-container.resizing .resize-handle {
-  background-color: rgba(0, 120, 215, 0.7);
-  opacity: 1;
 }
 
 /* Make the resize handles larger and more accessible */
@@ -143,16 +117,4 @@
 .ga-notes-container .header {
   cursor: move;
   user-select: none;
-}
-
-.ga-notes-container .drag-handle-indicator {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  opacity: 0.5;
-  font-size: 14px;
-}
-
-.ga-notes-container .drag-handle-indicator span {
-  transform: rotate(90deg);
 }

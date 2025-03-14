@@ -8,16 +8,86 @@
  * with the page's styles
  */
 
-/* Seamless note input styles */
-.ga-notes-container .note-input {
+/* Container for the entire note input with attachments */
+.ga-notes-container .note-input-container {
   display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
-  padding: 20px;
-  background-color: transparent;
   position: relative;
   z-index: 1;
+  overflow: hidden; /* Prevent container from scrolling */
+}
+
+/* Note content section (left side) */
+.ga-notes-container .note-content-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 20px;
+  background-color: transparent;
+  overflow-y: auto; /* Enable vertical scrolling */
+  height: 100%;
+  max-height: 100%; /* Ensure it doesn't exceed container height */
+  transition: padding-right 0.3s ease;
+}
+
+/* Add padding when attachments are collapsed to make room for the collapsed panel */
+.ga-notes-container .note-content-section.with-collapsed-attachments {
+  padding-right: 40px; /* Make room for the collapsed attachments section */
+}
+
+/* Attachments section (right side) */
+.ga-notes-container .attachments-section {
+  background-color: transparent;
+  border-left: 1px solid #d4d4d4;
+  overflow-y: auto; /* Enable vertical scrolling */
+  height: 100%;
+  max-height: 100%; /* Ensure it doesn't exceed container height */
+  transition: width 0.3s ease, transform 0.3s ease;
+  position: relative;
+}
+
+/* Expanded state */
+.ga-notes-container .attachments-section.expanded {
+  width: 200px;
+}
+
+/* Collapsed state */
+.ga-notes-container .attachments-section.collapsed {
+  width: 20px;
+  overflow: hidden;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* Attachments header with toggle button */
+.ga-notes-container .attachments-header {
+  display: flex;
+  border-bottom: 1px solid #d4d4d4;
+  position: sticky;
+  top: 0;
+}
+
+/* Toggle button for attachments section */
+.ga-notes-container .toggle-attachments-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-color);
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.ga-notes-container .toggle-attachments-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Adjust header in collapsed state */
+.ga-notes-container .attachments-section.collapsed .attachments-header {
+  justify-content: center;
 }
 
 /* Title input styles */
@@ -33,6 +103,7 @@
   min-height: 40px;
   position: relative;
   z-index: 2;
+  flex-shrink: 0; /* Prevent title from shrinking */
 }
 
 /* Content input styles */
@@ -46,7 +117,7 @@
   border: none;
   outline: none;
   min-height: 200px;
-  overflow-y: auto;
+  overflow-y: visible; /* Let parent handle scrolling */
   white-space: pre-wrap;
   position: relative;
   z-index: 2;
@@ -66,32 +137,50 @@
   outline: none;
 }
 
-/* Attachments container */
-.ga-notes-container .attachments-container {
-  margin-top: 20px;
-  border-top: 1px solid #eee;
-  padding-top: 10px;
-}
-
-.ga-notes-container .attachments-container h3 {
-  font-size: 1.1rem;
-  margin-bottom: 10px;
-  color: #555;
-}
-
+/* Attachments list */
 .ga-notes-container .attachments-list {
+  margin-left: 5px;
+  padding: 5px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* Loading indicator */
 .ga-notes-container .attachments-loading {
-  margin: 10px 0;
-  padding: 8px;
-  background-color: #f8f9fa;
+  margin: 5px 0;
+  padding: 4px;
+  background-color: #f5f5dc;
   border-radius: 4px;
   color: #666;
   font-style: italic;
   text-align: center;
+  font-size: 0.7rem;
+}
+
+/* Responsive layout for smaller screens */
+@media (max-width: 768px) {
+  .ga-notes-container .note-input-container {
+    flex-direction: column;
+  }
+
+  .ga-notes-container .attachments-section.expanded {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #d4d4d4;
+    max-height: 200px;
+  }
+  
+  .ga-notes-container .attachments-section.collapsed {
+    width: 100%;
+    height: 30px;
+    position: relative;
+    border-left: none;
+    border-top: 1px solid #d4d4d4;
+  }
+  
+  .ga-notes-container .note-content-section.with-collapsed-attachments {
+    padding-right: 20px;
+    padding-bottom: 30px;
+  }
 }

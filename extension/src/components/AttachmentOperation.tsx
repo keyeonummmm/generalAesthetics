@@ -44,16 +44,45 @@ export const AttachmentOperation: React.FC<AttachmentOperationProps> = ({
     onRemove(attachment);
   };
 
+  // Function to truncate URL to max 20 characters
+  const truncateUrl = (url: string | undefined) => {
+    if (!url) return '';
+    // Remove protocol and www
+    let cleanUrl = url.replace(/^(https?:\/\/)?(www\.)?/, '');
+    // Truncate to 20 chars
+    if (cleanUrl.length > 20) {
+      return cleanUrl.substring(0, 17) + '...';
+    }
+    return cleanUrl;
+  };
+
   return (
-    <div className={`attachment-item ${isPending ? 'pending' : ''}`} onClick={handleClick}>
+    <div className="attachment-item" onClick={handleClick}>
       {attachment.type === 'url' ? (
-        <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-          {attachment.url}
-        </a>
+        <div className="url-preview">
+          <div className="url-icon">
+            {/* Use favicon if available, otherwise show a generic icon */}
+            {attachment.url && (
+              <img 
+                src={`https://www.google.com/s2/favicons?domain=${new URL(attachment.url).hostname}`} 
+                alt="favicon" 
+                className="favicon"
+                onError={(e) => {
+                  // If favicon fails to load, show a generic icon
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            )}
+          </div>
+          <span className="url-text" title={attachment.url}>
+            {truncateUrl(attachment.url)}
+          </span>
+          <button className="remove-btn" onClick={handleRemove}>×</button>
+        </div>
       ) : (
         <div className="screenshot-preview">
           {isImageLoading ? (
-            <div className="loading-indicator">Loading full image...</div>
+            <div className="loading-indicator">Loading...</div>
           ) : (
             <img 
               src={attachment.thumbnailData || attachment.screenshotData} 
@@ -61,23 +90,9 @@ export const AttachmentOperation: React.FC<AttachmentOperationProps> = ({
               className={`thumbnail ${attachment.thumbnailData && !isImageLoaded ? 'is-thumbnail' : ''}`}
             />
           )}
-          <span className="screenshot-type">
-            {attachment.screenshotType === 'full' ? 'Full Page' : 'Visible Area'}
-            {attachment.metadata && (
-              <span className="screenshot-info">
-                {attachment.metadata.width && attachment.metadata.height 
-                  ? ` (${attachment.metadata.width}×${attachment.metadata.height})` 
-                  : ''}
-                {attachment.metadata.compressionRatio > 1 
-                  ? ` • ${attachment.metadata.compressionRatio.toFixed(1)}× compressed` 
-                  : ''}
-              </span>
-            )}
-          </span>
+          <button className="remove-btn" onClick={handleRemove}>×</button>
         </div>
       )}
-      {isPending && <span className="pending-badge">Pending</span>}
-      <button onClick={handleRemove}>Remove</button>
     </div>
   );
 }; 
