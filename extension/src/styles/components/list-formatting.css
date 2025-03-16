@@ -1,0 +1,68 @@
+/* List formatting styles */
+
+.list-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 5px;
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+}
+
+.list-popup-button {
+  background: none;
+  border: none;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.list-popup-button:hover {
+  background-color: #f0f0f0;
+}
+
+.list-popup-button.active {
+  background-color: #e0e0e0;
+}
+
+.list-popup-button .icon {
+  margin-right: 8px;
+  font-size: 16px;
+  width: 16px;
+  text-align: center;
+}
+
+/* Format button styles */
+.format-button.list-button {
+  font-size: 16px;
+  padding: 4px 8px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.format-button.list-button:hover,
+.format-button.list-button.active {
+  background-color: #f0f0f0;
+  border-color: #ccc;
+}
+
+.format-button.list-button.has-active-format {
+  background-color: #e0e0e0;
+  border-color: #bbb;
+} 

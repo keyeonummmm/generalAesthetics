@@ -3,7 +3,9 @@ import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
 import FormatToolbar from './FormatToolbar';
 import { TextFormatter } from '../lib/TextFormatter';
+import { ListFormatter } from '../lib/ListFormatter';
 import '../styles/components/note-input.css';
+import '../styles/components/list-formatting.css';
 
 interface NoteInputProps {
   // Core note data only
@@ -16,6 +18,9 @@ interface NoteInputProps {
   onContentChange: (content: string) => void;
   onAttachmentAdd: (attachment: Attachment) => void;
   onAttachmentRemove: (attachment: Attachment) => void;
+  // Attachment section expanded state
+  isAttachmentSectionExpanded?: boolean;
+  onAttachmentSectionExpandedChange?: (isExpanded: boolean) => void;
 }
 
 const NoteInput: React.FC<NoteInputProps> = ({
@@ -25,15 +30,23 @@ const NoteInput: React.FC<NoteInputProps> = ({
   onTitleChange,
   onContentChange,
   onAttachmentAdd,
-  onAttachmentRemove
+  onAttachmentRemove,
+  isAttachmentSectionExpanded: propIsExpanded,
+  onAttachmentSectionExpandedChange
 }) => {
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
-  const [isAttachmentSectionExpanded, setIsAttachmentSectionExpanded] = useState(true);
-  const [showDebugTools, setShowDebugTools] = useState(false);
+  const [isAttachmentSectionExpanded, setIsAttachmentSectionExpanded] = useState(propIsExpanded ?? false);
   const titleRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [lastSelectionRange, setLastSelectionRange] = useState<Range | null>(null);
   
+  // Sync with prop value when it changes
+  useEffect(() => {
+    if (propIsExpanded !== undefined && propIsExpanded !== isAttachmentSectionExpanded) {
+      setIsAttachmentSectionExpanded(propIsExpanded);
+    }
+  }, [propIsExpanded]);
+
   // Handle lazy loading of attachments if needed
   useEffect(() => {
     const loadLazyAttachments = async () => {
@@ -76,13 +89,6 @@ const NoteInput: React.FC<NoteInputProps> = ({
       }
     }
   }, [title, content]);
-
-  // When new attachments are added, ensure the attachment section is expanded
-  useEffect(() => {
-    if (attachments && attachments.length > 0) {
-      setIsAttachmentSectionExpanded(true);
-    }
-  }, [attachments?.length]);
 
   // Save selection when user clicks in the content area
   const saveSelection = useCallback(() => {
@@ -161,18 +167,16 @@ const NoteInput: React.FC<NoteInputProps> = ({
   };
   
   const toggleAttachmentSection = () => {
-    setIsAttachmentSectionExpanded(!isAttachmentSectionExpanded);
+    const newExpandedState = !isAttachmentSectionExpanded;
+    setIsAttachmentSectionExpanded(newExpandedState);
+    
+    // Notify parent component of the change
+    if (onAttachmentSectionExpandedChange) {
+      onAttachmentSectionExpandedChange(newExpandedState);
+    }
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    
-    // Show debug tools with Ctrl+Shift+D for debugging
-    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-      e.preventDefault();
-      setShowDebugTools(!showDebugTools);
-      return;
-    }
-    
     // Don't handle special keys for formatting
     if (e.ctrlKey || e.metaKey || e.altKey) {
       return;
@@ -181,6 +185,55 @@ const NoteInput: React.FC<NoteInputProps> = ({
     // Don't apply formatting in the title
     if (e.currentTarget === titleRef.current) {
       return;
+    }
+    
+    // Special handling for Enter key in lists
+    if (e.key === 'Enter' && contentRef.current) {
+      // Check if we're in a list
+      const listState = ListFormatter.getListFormatState();
+      if (listState.bulletedList || listState.numberedList) {
+        // Check if the current list item is empty and cursor is at the end
+        if (ListFormatter.isCurrentListItemEmpty() && ListFormatter.isCursorAtEndOfListItem()) {
+          // Exit the list
+          e.preventDefault(); // Prevent default Enter behavior
+          ListFormatter.exitList();
+          
+          // Update the content
+          if (contentRef.current) {
+            const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+            onContentChange(formattedContent);
+          }
+          
+          return;
+        }
+        return;
+      }
+    }
+    
+    // Special handling for Tab key in lists for indentation
+    if (e.key === 'Tab' && contentRef.current) {
+      const listState = ListFormatter.getListFormatState();
+      if (listState.bulletedList || listState.numberedList) {
+        // Prevent default tab behavior
+        e.preventDefault();
+        
+        // Apply indentation based on whether Shift is pressed
+        if (e.shiftKey) {
+          // Outdent (decrease indentation)
+          document.execCommand('outdent', false);
+        } else {
+          // Indent (increase indentation)
+          document.execCommand('indent', false);
+        }
+        
+        // Update the content
+        if (contentRef.current) {
+          const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+          onContentChange(formattedContent);
+        }
+        
+        return;
+      }
     }
   };
   
@@ -234,36 +287,6 @@ const NoteInput: React.FC<NoteInputProps> = ({
           onContentChange(formattedContent);
         }
       }, 0);
-    }
-  };
-  
-  // Debug function to directly test execCommand
-  const testExecCommand = (command: string, value?: string) => {
-    if (!contentRef.current) return;
-    
-    // Focus the content area
-    contentRef.current.focus();
-    
-    // Make sure we have some text selected or insert test text
-    const selection = window.getSelection();
-    if (!selection || selection.toString().length === 0) {
-      document.execCommand('insertText', false, 'Test formatting text');
-    }
-    
-    // Execute the command
-    try {
-      let result;
-      if (value) {
-        result = document.execCommand(command, false, value);
-      } else {
-        result = document.execCommand(command, false);
-      }
-      
-      // Update content after command
-      const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
-      onContentChange(formattedContent);
-    } catch (error) {
-      console.error(`[NoteInput] Error executing command:`, error);
     }
   };
   

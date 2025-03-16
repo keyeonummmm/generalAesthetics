@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TextFormatter } from '../lib/TextFormatter';
+import { ListFormatter } from '../lib/ListFormatter';
 import '../styles/components/format-toolbar.css';
+import '../styles/components/list-formatting.css';
 
 // Toolbar options
 const FORMATTING_OPTIONS = [
@@ -21,6 +23,20 @@ const FORMATTING_OPTIONS = [
   }
 ];
 
+// List formatting options
+const LIST_OPTIONS = [
+  {
+    name: 'Bulleted List',
+    icon: '•',
+    command: 'bulletedList'
+  },
+  {
+    name: 'Numbered List',
+    icon: '1.',
+    command: 'numberedList'
+  }
+];
+
 interface FormatToolbarProps {
   contentRef: React.RefObject<HTMLDivElement>;
   onFormatChange?: () => void;
@@ -28,13 +44,23 @@ interface FormatToolbarProps {
 
 const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange }) => {
   const [formatState, setFormatState] = useState<Record<string, string | boolean>>({});
+  const [listFormatState, setListFormatState] = useState<{
+    bulletedList: boolean;
+    numberedList: boolean;
+  }>({
+    bulletedList: false,
+    numberedList: false
+  });
   const [isContinuousFormatting, setIsContinuousFormatting] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [showFormatPopup, setShowFormatPopup] = useState(false);
+  const [showListPopup, setShowListPopup] = useState(false);
   
   // Refs for popup positioning and click outside detection
   const formatButtonRef = useRef<HTMLButtonElement>(null);
+  const listButtonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const listPopupRef = useRef<HTMLDivElement>(null);
   
   // Save selection for other operations
   const lastSelectionRef = useRef<Range | null>(null);
@@ -107,6 +133,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
         const newFormatState = TextFormatter.updateFormatsFromSelection();
         setFormatState(newFormatState);
         
+        // Update list format state
+        const newListFormatState = ListFormatter.getListFormatState();
+        setListFormatState(newListFormatState);
+        
         // Update continuous formatting state
         const isContinuous = TextFormatter.getContinuousFormatting();
         setIsContinuousFormatting(isContinuous);
@@ -122,9 +152,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     };
   }, [contentRef]);
   
-  // Handle click outside to close popup
+  // Handle click outside to close popups
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // Handle format popup
       if (
         popupRef.current && 
         !popupRef.current.contains(event.target as Node) &&
@@ -132,6 +163,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
         !formatButtonRef.current.contains(event.target as Node)
       ) {
         setShowFormatPopup(false);
+      }
+      
+      // Handle list popup
+      if (
+        listPopupRef.current && 
+        !listPopupRef.current.contains(event.target as Node) &&
+        listButtonRef.current && 
+        !listButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowListPopup(false);
       }
     };
     
@@ -154,11 +195,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     const selection = window.getSelection();
     if (!selection) {
       return false;
-    }
-    
-    // If no text is selected, insert some test text
-    if (selection.toString().length === 0) {
-      document.execCommand('insertText', false, 'Test formatting text');
     }
     
     // Apply the format directly using execCommand
@@ -263,6 +299,73 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     // Keep popup open for continued formatting
   };
   
+  // Handle list formatting option click
+  const handleListFormatClick = (command: string) => {
+    if (!contentRef.current) {
+      console.error('[FormatToolbar] No content element available');
+      return;
+    }
+    
+    // Save current selection before applying format
+    saveSelection();
+    
+    // Focus the content area if not already focused
+    if (document.activeElement !== contentRef.current) {
+      contentRef.current.focus();
+      
+      // Give browser a moment to establish focus
+      setTimeout(() => {
+        // Restore selection if needed
+        if (lastSelectionRef.current) {
+          restoreSelection();
+          
+          // Apply the list format based on command
+          applyListFormat(command);
+        } else {
+          // Apply the list format anyway
+          applyListFormat(command);
+        }
+      }, 10);
+      
+      return;
+    }
+    
+    // If already focused, restore selection if needed
+    if (lastSelectionRef.current) {
+      restoreSelection();
+    }
+    
+    // Apply the list format
+    applyListFormat(command);
+    
+    // Close the list popup after applying format
+    setShowListPopup(false);
+  };
+  
+  // Add a helper method to apply list formatting
+  const applyListFormat = (command: string) => {
+    let success = false;
+    
+    // Get the current list state to check if we're converting between list types
+    const currentListState = ListFormatter.getListFormatState();
+    
+    // Apply the appropriate list format
+    if (command === 'bulletedList') {
+      success = ListFormatter.formatBulletedList();
+    } else if (command === 'numberedList') {
+      success = ListFormatter.formatNumberedList();
+    }
+    
+    // Update list format state
+    const newListFormatState = ListFormatter.getListFormatState();
+    setListFormatState(newListFormatState);
+    
+    // Notify parent of format change
+    if (onFormatChange) {
+      onFormatChange();
+    }
+  };
+  
   // Handle clearing all formatting
   const handleClearFormatting = () => {
     if (!contentRef.current) {
@@ -286,9 +389,19 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           // Clear formatting
           const success = TextFormatter.clearFormatting();
           
+          // Also clear list formatting if present
+          const listState = ListFormatter.getListFormatState();
+          if (listState.bulletedList || listState.numberedList) {
+            ListFormatter.removeListFormatting();
+          }
+          
           // Reset our state
           setFormatState({});
           setIsContinuousFormatting(false);
+          setListFormatState({
+            bulletedList: false,
+            numberedList: false
+          });
           
           // Notify parent of format change
           if (onFormatChange) {
@@ -298,9 +411,19 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           // Clear formatting anyway
           const success = TextFormatter.clearFormatting();
           
+          // Also clear list formatting if present
+          const listState = ListFormatter.getListFormatState();
+          if (listState.bulletedList || listState.numberedList) {
+            ListFormatter.removeListFormatting();
+          }
+          
           // Reset our state
           setFormatState({});
           setIsContinuousFormatting(false);
+          setListFormatState({
+            bulletedList: false,
+            numberedList: false
+          });
           
           // Notify parent of format change
           if (onFormatChange) {
@@ -308,8 +431,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           }
         }
         
-        // Close popup after clearing
+        // Close popups after clearing
         setShowFormatPopup(false);
+        setShowListPopup(false);
       }, 10);
       
       return;
@@ -323,26 +447,53 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     // Clear formatting
     const success = TextFormatter.clearFormatting();
     
+    // Also clear list formatting if present
+    const listState = ListFormatter.getListFormatState();
+    if (listState.bulletedList || listState.numberedList) {
+      ListFormatter.removeListFormatting();
+    }
+    
     // Reset our state
     setFormatState({});
     setIsContinuousFormatting(false);
+    setListFormatState({
+      bulletedList: false,
+      numberedList: false
+    });
     
     // Notify parent of format change
     if (onFormatChange) {
       onFormatChange();
     }
     
-    // Close popup after clearing
+    // Close popups after clearing
     setShowFormatPopup(false);
+    setShowListPopup(false);
   };
   
   // Toggle format popup
   const toggleFormatPopup = () => {
     setShowFormatPopup(prev => !prev);
+    // Close list popup if open
+    if (showListPopup) {
+      setShowListPopup(false);
+    }
+  };
+  
+  // Toggle list popup
+  const toggleListPopup = () => {
+    setShowListPopup(prev => !prev);
+    // Close format popup if open
+    if (showFormatPopup) {
+      setShowFormatPopup(false);
+    }
   };
   
   // Check if any formatting is active
   const hasActiveFormatting = Object.values(formatState).some(value => !!value);
+  
+  // Check if any list formatting is active
+  const hasActiveListFormatting = Object.values(listFormatState).some(value => !!value);
   
   // Direct button click handler that works
   const directButtonClickHandler = (e: Event) => {
@@ -362,6 +513,13 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     } else if (button.title === 'Clear Formatting') {
       applyFormatDirectly('removeFormat');
       setShowFormatPopup(false);
+      setShowListPopup(false);
+    } else if (button.title === 'Bulleted List') {
+      ListFormatter.formatBulletedList();
+      setShowListPopup(false);
+    } else if (button.title === 'Numbered List') {
+      ListFormatter.formatNumberedList();
+      setShowListPopup(false);
     }
   };
   
@@ -401,6 +559,36 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     };
   }, [showFormatPopup]);
   
+  // Add direct DOM event listeners for list popup
+  useEffect(() => {
+    if (showListPopup && listPopupRef.current) {
+      const node = listPopupRef.current;
+      
+      // Add direct DOM event listeners to detect clicks
+      const buttons = node.querySelectorAll('button');
+      buttons.forEach((button) => {
+        // Remove any existing listeners first to avoid duplicates
+        button.removeEventListener('click', directButtonClickHandler);
+        button.removeEventListener('mousedown', directButtonMouseDownHandler);
+        
+        // Add new listeners
+        button.addEventListener('click', directButtonClickHandler);
+        button.addEventListener('mousedown', directButtonMouseDownHandler);
+      });
+    }
+    
+    return () => {
+      // Clean up event listeners when popup is hidden
+      if (listPopupRef.current) {
+        const buttons = listPopupRef.current.querySelectorAll('button');
+        buttons.forEach(button => {
+          button.removeEventListener('click', directButtonClickHandler);
+          button.removeEventListener('mousedown', directButtonMouseDownHandler);
+        });
+      }
+    };
+  }, [showListPopup]);
+  
   return (
     <div className="format-toolbar">
       {/* Main format button (Aa) */}
@@ -411,6 +599,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
         onClick={toggleFormatPopup}
       >
         Aa
+      </button>
+      
+      {/* List format button */}
+      <button
+        ref={listButtonRef}
+        className={`format-button list-button ${hasActiveListFormatting ? 'has-active-format' : ''}`}
+        title="List Formatting"
+        onClick={toggleListPopup}
+      >
+        ≡
       </button>
       
       {/* Format popup */}
@@ -447,6 +645,31 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           >
             Clear
           </button>
+        </div>
+      )}
+      
+      {/* List popup */}
+      {showListPopup && (
+        <div 
+          className="list-popup" 
+          ref={listPopupRef}
+        >
+          {/* List formatting options */}
+          {LIST_OPTIONS.map((option) => (
+            <button
+              key={option.name}
+              className={`list-popup-button ${listFormatState[option.command as keyof typeof listFormatState] ? 'active' : ''}`}
+              title={option.name}
+              onClick={(e) => {
+                e.stopPropagation(); // Try to prevent the popup from closing
+                handleListFormatClick(option.command);
+              }}
+              style={{ position: 'relative', zIndex: 1000 }} // Ensure buttons are above other elements
+            >
+              <span className="icon">{option.icon}</span>
+              {option.name}
+            </button>
+          ))}
         </div>
       )}
     </div>

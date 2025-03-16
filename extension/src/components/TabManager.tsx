@@ -22,6 +22,7 @@ interface Tab {
   noteId?: string;
   lastEdited: string;
   pinned?: boolean; // Add pinned property to support tab pinning
+  attachmentSectionExpanded?: boolean; // Track if attachment section is expanded
 }
 
 interface TabManagerProps {
@@ -52,6 +53,8 @@ export interface TabManagerRef {
   syncCache: () => Promise<void>;
   
   handleSave: (tabId: string, note: Note) => Promise<void>;
+  setAttachmentSectionExpanded: (tabId: string, isExpanded: boolean) => void;
+  isAttachmentSectionExpanded: (tabId: string) => boolean;
 }
 
 interface TabManagerCache {
@@ -125,7 +128,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       content: '', 
       isNew: true, 
       syncStatus: 'pending' as const,
-      lastEdited: new Date().toISOString()
+      lastEdited: new Date().toISOString(),
+      attachmentSectionExpanded: false // Default to collapsed
     };
     return [initialTab];
   });
@@ -188,7 +192,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             content: '', 
             isNew: true, 
             syncStatus: 'pending' as const,
-            lastEdited: new Date().toISOString()
+            lastEdited: new Date().toISOString(),
+            attachmentSectionExpanded: false // Default to collapsed
           };
           setTabs([initialTab]);
           setActiveTabId(initialTab.id);
@@ -202,7 +207,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           content: '', 
           isNew: true, 
           syncStatus: 'pending' as const,
-          lastEdited: new Date().toISOString()
+          lastEdited: new Date().toISOString(),
+          attachmentSectionExpanded: false // Default to collapsed
         };
         setTabs([initialTab]);
         setActiveTabId(initialTab.id);
@@ -572,7 +578,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         isNew: true,
         syncStatus: 'pending' as const,
         lastEdited: new Date().toISOString(),
-        pinned: false // Explicitly set to false to ensure new tabs are never pinned
+        pinned: false, // Explicitly set to false to ensure new tabs are never pinned
+        attachmentSectionExpanded: false // Default to collapsed for all new tabs
       };
       
       // Update the cache with the new tab
@@ -672,7 +679,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             noteId: note.id,
             syncStatus: 'synced', // Explicitly set to synced for notes from DB
             lastEdited: new Date().toISOString(),
-            pinned: false // Ensure the tab is not pinned by default
+            pinned: false, // Ensure the tab is not pinned by default
+            attachmentSectionExpanded: false // Default to collapsed for loaded notes
           };
         }
         
@@ -706,7 +714,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       noteId: note ? note.id : undefined,
       syncStatus: note ? 'synced' : 'pending',
       lastEdited: new Date().toISOString(),
-      pinned: false // Ensure new tabs are never pinned by default
+      pinned: false, // Ensure new tabs are never pinned by default
+      attachmentSectionExpanded: false // Default to collapsed for all new tabs
     };
 
     setTabs((prevTabs) => {
@@ -781,7 +790,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               isNew: true,
               syncStatus: 'pending' as const,
               lastEdited: new Date().toISOString(),
-              pinned: false // Always reset pinned status
+              pinned: false, // Always reset pinned status
+              attachmentSectionExpanded: false // Reset attachment section expanded state
             };
           }
           return t;
@@ -828,6 +838,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     await TabCacheManager.cleanupOrphanedAttachments();
   };
 
+  // Update useImperativeHandle to expose the new methods
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
       // Use the component-level addTab function for consistency
@@ -845,7 +856,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           createdAt: savedNote.createdAt,
           updatedAt: savedNote.updatedAt,
           syncStatus: 'synced' as const,
-          isNew: false
+          isNew: false,
+          // Preserve the current attachment section expanded state
+          attachmentSectionExpanded: tab.attachmentSectionExpanded
         } : tab
       ));
 
@@ -880,10 +893,12 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       await removeTabByNoteId(noteId);
     },
     updateTabWithId: (tabId: string, note: Note) => {
-
       setTabs(prevTabs => {
         const updatedTabs = prevTabs.map(tab => {
           if (tab.id === tabId) {
+            // Check if this is a new note or an update to an existing note
+            const isNewNote = !tab.noteId && note.id;
+            
             return {
               ...tab,
               noteId: note.id,
@@ -892,7 +907,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               version: note.version,
               attachments: note.attachments,
               isNew: false,
-              syncStatus: 'synced' as const
+              syncStatus: 'synced' as const,
+              // For new notes, set attachmentSectionExpanded to false
+              // For existing notes, preserve the current state
+              attachmentSectionExpanded: isNewNote ? false : tab.attachmentSectionExpanded
             };
           }
           return tab;
@@ -915,7 +933,20 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         attachment
       );
       
-      setTabs(updatedCache.tabs);
+      // Update tabs state and set attachment section to expanded
+      // This is a user-initiated attachment addition, so we should expand the section
+      const tab = tabs.find(t => t.id === tabId);
+      if (tab) {
+        // Use updateTabState to ensure all necessary updates happen
+        updateTabState(tabId, {
+          attachments: updatedCache.tabs.find(t => t.id === tabId)?.attachments,
+          loadedAttachments: [...(tab.loadedAttachments || []), attachment],
+          attachmentSectionExpanded: true // Explicitly expand when adding attachment
+        });
+      } else {
+        // Fallback if tab not found
+        setTabs(updatedCache.tabs);
+      }
     },
     pinTab: async (tabId: string) => {
       await handlePinTab(tabId);
@@ -932,6 +963,13 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     },
     handleSave: async (tabId: string, note: Note) => {
       await handleSave(tabId, note);
+    },
+    setAttachmentSectionExpanded: (tabId: string, isExpanded: boolean) => {
+      handleAttachmentSectionExpandedChange(tabId, isExpanded);
+    },
+    isAttachmentSectionExpanded: (tabId: string) => {
+      const tab = tabs.find(tab => tab.id === tabId);
+      return tab?.attachmentSectionExpanded === true;
     }
   }));
 
@@ -1058,7 +1096,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             attachments: updatedTab.attachments,
             loadedAttachments: [...(tab.loadedAttachments || []), attachment],
             version: updatedNote.version,
-            syncStatus: 'synced'
+            syncStatus: 'synced',
+            attachmentSectionExpanded: true // Explicitly expand when adding attachment
           });
         }
       } else {
@@ -1069,6 +1108,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           updateTabState(tabId, {
             attachments: updatedTab.attachments,
             loadedAttachments: [...(tab.loadedAttachments || []), attachment],
+            attachmentSectionExpanded: true // Explicitly expand when adding attachment
           });
         }
       }
@@ -1154,7 +1194,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             noteId: savedNote.id,
             version: savedNote.version,
             isRichText: savedNote.isRichText, // Update isRichText flag
-            syncStatus: 'synced' as const
+            syncStatus: 'synced' as const,
+            // Preserve the current attachment section expanded state
+            attachmentSectionExpanded: t.attachmentSectionExpanded
           };
           
           // If we have attachment data, update both references and full data
@@ -1321,6 +1363,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     };
   }, []);
 
+  // Add a method to handle attachment section expanded state changes
+  const handleAttachmentSectionExpandedChange = (tabId: string, isExpanded: boolean) => {
+    setTabs(prevTabs => prevTabs.map(tab => {
+      if (tab.id === tabId) {
+        return {
+          ...tab,
+          attachmentSectionExpanded: isExpanded
+        };
+      }
+      return tab;
+    }));
+  };
+
   return (
     <div className="tab-manager">
       <div className="tab-list">
@@ -1387,6 +1442,10 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 onContentChange={(content) => handleContentChange(activeTab.id, content)}
                 onAttachmentAdd={(attachment) => handleAttachmentAdd(activeTab.id, attachment)}
                 onAttachmentRemove={(attachment) => handleAttachmentRemove(activeTab.id, attachment)}
+                isAttachmentSectionExpanded={activeTab.attachmentSectionExpanded}
+                onAttachmentSectionExpandedChange={(isExpanded) => 
+                  handleAttachmentSectionExpandedChange(activeTab.id, isExpanded)
+                }
               />
             </div>
           );
