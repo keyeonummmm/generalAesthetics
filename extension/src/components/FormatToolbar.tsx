@@ -40,9 +40,10 @@ const LIST_OPTIONS = [
 interface FormatToolbarProps {
   contentRef: React.RefObject<HTMLDivElement>;
   onFormatChange?: () => void;
+  standalone?: boolean; // New prop to control rendering style
 }
 
-const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange }) => {
+const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange, standalone = false }) => {
   const [formatState, setFormatState] = useState<Record<string, string | boolean>>({});
   const [listFormatState, setListFormatState] = useState<{
     bulletedList: boolean;
@@ -589,6 +590,95 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     };
   }, [showListPopup]);
   
+  // Render just the buttons if standalone mode is enabled
+  if (standalone) {
+    return (
+      <div className="format-toolbar-standalone">
+        {/* Main format button (Aa) */}
+        <button
+          ref={formatButtonRef}
+          className={`format-button format-main-button ${hasActiveFormatting ? 'has-active-format' : ''}`}
+          title="Text Formatting"
+          onClick={toggleFormatPopup}
+        >
+          Aa
+        </button>
+        
+        {/* List format button */}
+        <button
+          ref={listButtonRef}
+          className={`format-button list-button ${hasActiveListFormatting ? 'has-active-format' : ''}`}
+          title="List Formatting"
+          onClick={toggleListPopup}
+        >
+          ≡
+        </button>
+        
+        {/* Format popup */}
+        {showFormatPopup && (
+          <div 
+            className="format-popup" 
+            ref={popupRef}
+          >
+            {/* Formatting options */}
+            <div className="format-popup-buttons">
+              {FORMATTING_OPTIONS.map((option) => (
+                <button
+                  key={option.name}
+                  className={`format-popup-button ${formatState[option.command] ? 'active' : ''}`}
+                  title={option.name}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Try to prevent the popup from closing
+                    handleFormatClick(option.command);
+                  }}
+                >
+                  <span className="icon">{option.icon}</span>
+                  <span className="label">{option.name}</span>
+                </button>
+              ))}
+              <button
+                className="format-popup-button clear-format-button"
+                title="Clear Formatting"
+                onClick={(e) => {
+                  e.stopPropagation(); // Try to prevent the popup from closing
+                  handleClearFormatting();
+                }}
+              >
+                <span className="icon">✕</span>
+                <span className="label">Clear</span>
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* List popup */}
+        {showListPopup && (
+          <div 
+            className="list-popup" 
+            ref={listPopupRef}
+          >
+            {/* List formatting options */}
+            {LIST_OPTIONS.map((option) => (
+              <button
+                key={option.name}
+                className={`list-popup-button ${listFormatState[option.command as keyof typeof listFormatState] ? 'active' : ''}`}
+                title={option.name}
+                onClick={(e) => {
+                  e.stopPropagation(); // Try to prevent the popup from closing
+                  handleListFormatClick(option.command);
+                }}
+              >
+                <span className="icon">{option.icon}</span>
+                <span className="label">{option.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Regular toolbar rendering
   return (
     <div className="format-toolbar">
       {/* Main format button (Aa) */}
@@ -618,33 +708,33 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           ref={popupRef}
         >
           {/* Formatting options */}
-          {FORMATTING_OPTIONS.map((option) => (
+          <div className="format-popup-buttons">
+            {FORMATTING_OPTIONS.map((option) => (
+              <button
+                key={option.name}
+                className={`format-popup-button ${formatState[option.command] ? 'active' : ''}`}
+                title={option.name}
+                onClick={(e) => {
+                  e.stopPropagation(); // Try to prevent the popup from closing
+                  handleFormatClick(option.command);
+                }}
+              >
+                <span className="icon">{option.icon}</span>
+                <span className="label">{option.name}</span>
+              </button>
+            ))}
             <button
-              key={option.name}
-              className={`format-popup-button ${formatState[option.command] ? 'active' : ''}`}
-              title={option.name}
+              className="format-popup-button clear-format-button"
+              title="Clear Formatting"
               onClick={(e) => {
                 e.stopPropagation(); // Try to prevent the popup from closing
-                handleFormatClick(option.command);
+                handleClearFormatting();
               }}
-              style={{ position: 'relative', zIndex: 1000 }} // Ensure buttons are above other elements
             >
-              {option.icon}
+              <span className="icon">✕</span>
+              <span className="label">Clear</span>
             </button>
-          ))}
-          
-          {/* Clear formatting button */}
-          <button
-            className="format-popup-button clear-format-button"
-            title="Clear Formatting"
-            onClick={(e) => {
-              e.stopPropagation(); // Try to prevent the popup from closing
-              handleClearFormatting();
-            }}
-            style={{ position: 'relative', zIndex: 1000 }} // Ensure button is above other elements
-          >
-            Clear
-          </button>
+          </div>
         </div>
       )}
       
@@ -664,10 +754,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
                 e.stopPropagation(); // Try to prevent the popup from closing
                 handleListFormatClick(option.command);
               }}
-              style={{ position: 'relative', zIndex: 1000 }} // Ensure buttons are above other elements
             >
               <span className="icon">{option.icon}</span>
-              {option.name}
+              <span className="label">{option.name}</span>
             </button>
           ))}
         </div>

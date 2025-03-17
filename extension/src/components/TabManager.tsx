@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useEffect, useRef } from 'react';
 import NoteInput from './NoteInput';
 import { Note, DBProxy as NotesDB } from '../lib/DBProxy';
 import { Attachment } from '../lib/Attachment';
@@ -28,6 +28,7 @@ interface Tab {
 interface TabManagerProps {
   onChangeStatus: (hasUnsavedChanges: boolean) => void;
   onContentChange: (tabId: string, title: string, content: string, version?: number, noteId?: string) => void;
+  onContentRefChange?: (contentRef: React.RefObject<HTMLDivElement> | null) => void;
 }
 
 export interface TabManagerRef {
@@ -120,6 +121,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
 const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   onChangeStatus,
   onContentChange,
+  onContentRefChange
 }, ref) => {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const initialTab: Tab = { 
@@ -137,6 +139,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   const [activeTabId, setActiveTabId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   
+  // Create contentRef at the top level of the component
+  const contentRef = useRef<HTMLDivElement>(null);
+  
   // Add state for confirmation dialog
   const [confirmationState, setConfirmationState] = useState<{
     isOpen: boolean;
@@ -147,6 +152,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     tabId: '',
     hasUnsavedChanges: false
   });
+
+  // Expose the content ref to the parent component when active tab changes
+  useEffect(() => {
+    if (onContentRefChange) {
+      onContentRefChange(contentRef);
+    }
+    
+    return () => {
+      if (onContentRefChange) {
+        onContentRefChange(null);
+      }
+    };
+  }, [activeTabId, onContentRefChange]);
 
   // Load cache on mount
   useEffect(() => {
@@ -1376,6 +1394,44 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     }));
   };
 
+  // Update renderActiveTab to use the top-level contentRef
+  const renderActiveTab = () => {
+    const activeTab = tabs.find(tab => tab.id === activeTabId);
+    
+    if (!activeTab) {
+      return <div className="empty-state">No active tab</div>;
+    }
+    
+    return (
+      <NoteInput
+        title={activeTab.title}
+        content={activeTab.content}
+        attachments={activeTab.loadedAttachments}
+        noteId={activeTab.noteId}
+        contentRef={contentRef} // Pass the ref to NoteInput
+        onTitleChange={(title) => handleTitleChange(activeTab.id, title)}
+        onContentChange={(content) => handleContentChange(activeTab.id, content)}
+        onAttachmentAdd={(attachment) => handleAttachmentAdd(activeTab.id, attachment)}
+        onAttachmentRemove={(attachment) => handleAttachmentRemove(activeTab.id, attachment)}
+        isAttachmentSectionExpanded={activeTab.attachmentSectionExpanded}
+        onAttachmentSectionExpandedChange={(isExpanded) => handleAttachmentSectionExpandedChange(activeTab.id, isExpanded)}
+        onFormatChange={() => handleFormatChange(activeTab.id)}
+      />
+    );
+  };
+
+  // Add a new handler for format changes
+  const handleFormatChange = (tabId: string) => {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab) {
+      // Update the tab's sync status
+      updateTabState(tabId, { syncStatus: 'pending' });
+      
+      // Notify parent of changes
+      onChangeStatus(true);
+    }
+  };
+
   return (
     <div className="tab-manager">
       <div className="tab-list">
@@ -1424,32 +1480,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         </button>
       </div>
       <div className="tab-content">
-        {(() => {
-          const activeTab = tabs.find(tab => tab.id === activeTabId);
-          if (!activeTab) return null;
-          
-          // Check if the active tab has attachments
-          const hasAttachments = activeTab.loadedAttachments && activeTab.loadedAttachments.length > 0;
-          
-          return (
-            <div className={`tab-wrapper ${hasAttachments ? 'has-attachments' : ''}`}>
-              <NoteInput
-                title={activeTab.title}
-                content={activeTab.content}
-                attachments={activeTab.loadedAttachments}
-                noteId={activeTab.noteId}
-                onTitleChange={(title) => handleTitleChange(activeTab.id, title)}
-                onContentChange={(content) => handleContentChange(activeTab.id, content)}
-                onAttachmentAdd={(attachment) => handleAttachmentAdd(activeTab.id, attachment)}
-                onAttachmentRemove={(attachment) => handleAttachmentRemove(activeTab.id, attachment)}
-                isAttachmentSectionExpanded={activeTab.attachmentSectionExpanded}
-                onAttachmentSectionExpandedChange={(isExpanded) => 
-                  handleAttachmentSectionExpandedChange(activeTab.id, isExpanded)
-                }
-              />
-            </div>
-          );
-        })()}
+        {renderActiveTab()}
       </div>
       
       {/* Add Confirmation Dialog */}

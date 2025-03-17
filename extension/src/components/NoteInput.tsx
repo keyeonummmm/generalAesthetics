@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
-import FormatToolbar from './FormatToolbar';
 import { TextFormatter } from '../lib/TextFormatter';
 import { ListFormatter } from '../lib/ListFormatter';
 import '../styles/components/note-input.css';
@@ -21,6 +20,10 @@ interface NoteInputProps {
   // Attachment section expanded state
   isAttachmentSectionExpanded?: boolean;
   onAttachmentSectionExpandedChange?: (isExpanded: boolean) => void;
+  // Format change handler
+  onFormatChange?: () => void;
+  // Add contentRef prop
+  contentRef?: React.RefObject<HTMLDivElement>;
 }
 
 const NoteInput: React.FC<NoteInputProps> = ({
@@ -32,12 +35,15 @@ const NoteInput: React.FC<NoteInputProps> = ({
   onAttachmentAdd,
   onAttachmentRemove,
   isAttachmentSectionExpanded: propIsExpanded,
-  onAttachmentSectionExpandedChange
+  onAttachmentSectionExpandedChange,
+  onFormatChange,
+  contentRef: externalContentRef
 }) => {
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
   const [isAttachmentSectionExpanded, setIsAttachmentSectionExpanded] = useState(propIsExpanded ?? false);
   const titleRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  // Use external ref if provided, otherwise create our own
+  const contentRef = externalContentRef || useRef<HTMLDivElement>(null);
   const [lastSelectionRange, setLastSelectionRange] = useState<Range | null>(null);
   
   // Sync with prop value when it changes
@@ -163,6 +169,11 @@ const NoteInput: React.FC<NoteInputProps> = ({
     if (contentRef.current) {
       const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
       onContentChange(formattedContent);
+      
+      // Call the parent's format change handler if provided
+      if (onFormatChange) {
+        onFormatChange();
+      }
     }
   };
   
@@ -327,12 +338,6 @@ const NoteInput: React.FC<NoteInputProps> = ({
   return (
     <div className="note-input-container">
       <div className={`note-content-section ${hasAttachments && !isAttachmentSectionExpanded ? 'with-collapsed-attachments' : ''}`}>
-        {/* Add the formatting toolbar at the top */}
-        <FormatToolbar 
-          contentRef={contentRef}
-          onFormatChange={handleFormatChange}
-        />
-        
         <div 
           ref={titleRef}
           className="title-input-seamless"

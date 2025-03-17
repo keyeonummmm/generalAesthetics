@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TabManager from './TabManager';
 import { SaveButton } from './SaveButton';
 import { ActionButton } from './ActionButton';
@@ -13,6 +13,7 @@ import { TabManagerRef } from './TabManager';
 import { hideExtensionUI, showExtensionUI } from '../content';
 import { processImage } from '../lib/imageProcessor';
 import { createLazyLoadableImage } from '../lib/imageProcessor';
+import FormatToolbar from './FormatToolbar';
 
 const Popup: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -32,6 +33,7 @@ const Popup: React.FC = () => {
   const [isNotesManagerOpen, setIsNotesManagerOpen] = useState(false);
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeContentRef, setActiveContentRef] = useState<React.RefObject<HTMLDivElement> | null>(null);
   
   // Initialize theme when component mounts
   useEffect(() => {
@@ -224,6 +226,21 @@ const Popup: React.FC = () => {
 
   const tabManagerRef = React.useRef<TabManagerRef | null>(null);
 
+  // Handle format change
+  const handleFormatChange = () => {
+    // When formatting is applied, we need to update the active note content
+    if (tabManagerRef.current && activeNote.tabId) {
+      const activeTab = tabManagerRef.current.getActiveTab();
+      if (activeTab) {
+        setActiveNote(prev => ({
+          ...prev,
+          content: activeTab.content,
+          syncStatus: 'pending'
+        }));
+      }
+    }
+  };
+
   return (
     <div className="popup-container">
       <div className="header" title="Drag to move (Double-click to reset position)">
@@ -276,24 +293,37 @@ const Popup: React.FC = () => {
           ref={tabManagerRef}
           onChangeStatus={handleUnsavedChanges}
           onContentChange={handleContentChange}
+          onContentRefChange={setActiveContentRef}
         />
       </div>
       <div className="footer">
         <div className="footer-left">
-          <button 
-            className="attachment-upload-btn"
-            title="Add attachment"
-            onClick={() => setIsAttachmentMenuOpen(true)}
-            disabled={!activeNote.tabId}
-          >
-            <span className="icon">📎</span>
-          </button>
-          <AttachmentMenu
-            isOpen={isAttachmentMenuOpen}
-            onClose={() => setIsAttachmentMenuOpen(false)}
-            onUrlCapture={handleUrlCapture}
-            onScreenshotCapture={handleScreenshotCapture}
-          />
+          <div className="attachment-container">
+            <button 
+              className="attachment-upload-btn"
+              title="Add attachment"
+              onClick={() => setIsAttachmentMenuOpen(true)}
+              disabled={!activeNote.tabId}
+            >
+              <span className="icon">📎</span>
+            </button>
+            {isAttachmentMenuOpen && (
+              <AttachmentMenu
+                isOpen={isAttachmentMenuOpen}
+                onClose={() => setIsAttachmentMenuOpen(false)}
+                onUrlCapture={handleUrlCapture}
+                onScreenshotCapture={handleScreenshotCapture}
+              />
+            )}
+          </div>
+          {/* Add FormatToolbar in standalone mode */}
+          {activeContentRef && (
+            <FormatToolbar
+              contentRef={activeContentRef}
+              onFormatChange={handleFormatChange}
+              standalone={true}
+            />
+          )}
         </div>
         <SaveButton 
           title={activeNote.title}

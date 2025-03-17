@@ -94,6 +94,105 @@
 .ga-notes-container .footer-left {
   display: flex;
   gap: 8px;
+  position: relative; /* For positioning popups */
+}
+
+/* Attachment container for proper menu positioning */
+.ga-notes-container .attachment-container {
+  position: relative;
+  display: inline-block;
+}
+
+/* Format buttons in footer */
+.ga-notes-container .footer-left .format-button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  border-radius: var(--ga-border-radius);
+  padding: 8px;
+  height: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--ga-transition-speed) ease;
+}
+
+.ga-notes-container .footer-left .format-button:hover {
+  background: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.ga-notes-container .footer-left .format-button.has-active-format {
+  background-color: var(--hover-bg);
+  border-color: var(--hover-text);
+  color: var(--hover-text);
+}
+
+/* Format toolbar standalone in footer */
+.ga-notes-container .footer-left .format-toolbar-standalone {
+  position: relative;
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* Format popups in footer */
+.ga-notes-container .footer-left .format-popup,
+.ga-notes-container .footer-left .list-popup {
+  position: absolute;
+  top: auto;
+  bottom: calc(100% + 5px);
+  left: 0;
+  z-index: 1000;
+  background-color: var(--bg-color);
+  min-width: 220px;
+  box-shadow: 0 2px 10px var(--ga-shadow-color);
+  border-radius: var(--ga-border-radius);
+  padding: 12px 0;
+  border: 1px solid var(--border-color);
+  margin-bottom: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.ga-notes-container .footer-left .format-popup-buttons,
+.ga-notes-container .footer-left .list-popup-buttons {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.ga-notes-container .footer-left .format-popup-button,
+.ga-notes-container .footer-left .list-popup-button {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background-color var(--ga-transition-speed) ease, color var(--ga-transition-speed) ease;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  text-align: left;
+  margin: 0;
+  font-weight: normal;
+  font-family: inherit;
+}
+
+.ga-notes-container .footer-left .format-popup-button:hover,
+.ga-notes-container .footer-left .list-popup-button:hover {
+  background-color: var(--hover-bg);
+  color: var(--hover-text);
+}
+
+.ga-notes-container .footer-left .format-popup-button .icon,
+.ga-notes-container .footer-left .list-popup-button .icon {
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ga-notes-container .attachment-upload-btn {
