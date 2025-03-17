@@ -1,16 +1,23 @@
 # General Aesthetics
 
-A public notepad application enabling users to create, share and discuss notes.
+A note extension on chrome that support multiple tab operations on different webpages.
 
 ## Features
-- Public note creation and viewing
-- Comment system on notes
-- Browser extension integration
-- User authentication
-- Creator-only note modification
-- Real-time updates
+- text styling
+- listing
+- screenshot
+- URL capture
+- use caching support get back at anytime
+- pin tabs
+- multiple tabs open at the same time
 
 ## Getting Started
+'''bash
+git clone https://github.com/yourusername/general-aesthetics.git
+cd extension
+npm install
+npm run build
+'''
 
 ### Prerequisites
 - Docker 24.x
@@ -26,9 +33,6 @@ A public notepad application enabling users to create, share and discuss notes.
 
 ## Project Structure
 [Include relevant sections from project_structure]
-
-## Contributing
-[Link to CONTRIBUTING.md]
 
 ## License
 [Choose appropriate license] 
