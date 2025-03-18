@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TextFormatter } from '../lib/TextFormatter';
 import { ListFormatter } from '../lib/ListFormatter';
+import { SpreadsheetFormatter } from '../lib/SpreadsheetFormatter';
 import '../styles/components/format-toolbar.css';
 import '../styles/components/list-formatting.css';
+import '../styles/components/spreadsheet.css';
 
 // Toolbar options
 const FORMATTING_OPTIONS = [
@@ -87,11 +89,11 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
       if (selection) {
         selection.removeAllRanges();
         selection.addRange(lastSelectionRef.current.cloneRange());
+        
+        
         return true;
       }
-    } catch (e) {
-      console.error('[FormatToolbar] Error restoring selection:', e);
-    }
+    } catch (e) {}
     return false;
   };
   
@@ -125,6 +127,15 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
                              contentRef.current.contains(range.commonAncestorContainer.parentNode));
         
         if (!isInContent) {
+          return;
+        }
+        
+        // Check if we're in a spreadsheet cell
+        const inSpreadsheetCell = 
+          (range.commonAncestorContainer as Element)?.closest?.('.ga-spreadsheet-cell') ||
+          (range.commonAncestorContainer.parentElement as Element)?.closest?.('.ga-spreadsheet-cell');
+        
+        if (inSpreadsheetCell) {
           return;
         }
         
@@ -215,7 +226,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
       
       return result;
     } catch (error) {
-      console.error(`Error executing command: ${command}`, error);
       return false;
     }
   };
@@ -223,7 +233,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle formatting option click
   const handleFormatClick = (command: string) => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -304,7 +313,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle list formatting option click
   const handleListFormatClick = (command: string) => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -371,7 +379,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle clearing all formatting
   const handleClearFormatting = () => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -505,6 +512,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     e.preventDefault();
     e.stopPropagation();
     
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(true);
+    
     // Apply formatting directly based on button title
     if (button.title === 'Bold') {
       applyFormatDirectly('bold');
@@ -529,6 +540,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     // Prevent default behavior and stop propagation to avoid losing focus
     e.preventDefault();
     e.stopPropagation();
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(true);
   };
   
   // Add direct DOM event listeners when popup is shown
@@ -594,27 +608,56 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle spreadsheet button click (placeholder for future implementation)
   const handleSpreadsheetClick = () => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(true);
     
     // Save current selection before applying format
     saveSelection();
     
+
     // Focus the content area if not already focused
     if (document.activeElement !== contentRef.current) {
       contentRef.current.focus();
+      
+      // Give browser a moment to establish focus
+      setTimeout(() => {
+        // Restore selection if needed
+        if (lastSelectionRef.current) {
+          const restored = restoreSelection();
+
+          // Insert spreadsheet at selection
+          const success = SpreadsheetFormatter.insertSpreadsheet();
+          
+          // Notify parent of format change
+          if (onFormatChange) {
+            onFormatChange();
+          }
+        } else {
+          // Insert spreadsheet anyway
+          const success = SpreadsheetFormatter.insertSpreadsheet();
+          
+          // Notify parent of format change
+          if (onFormatChange) {
+            onFormatChange();
+          }
+        }
+      }, 10);
+      
+      return;
     }
     
     // If already focused, restore selection if needed
     if (lastSelectionRef.current) {
-      restoreSelection();
+      const restored = restoreSelection();
     }
     
-    // Future implementation will go here
-    console.log('Spreadsheet button clicked - functionality to be implemented');
+    // Insert spreadsheet
+    const success = SpreadsheetFormatter.insertSpreadsheet();
     
-    // Notify parent of format change if needed
+    // Notify parent of format change
     if (onFormatChange) {
       onFormatChange();
     }

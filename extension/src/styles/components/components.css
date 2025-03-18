@@ -557,3 +557,103 @@
   height: 16px;
   fill: currentColor;
 }
+
+/* Spreadsheet styles within note content */
+.ga-notes-container .ga-spreadsheet-container {
+  position: relative;
+  margin: 16px 0;
+  padding: 0 0 0 24px; /* Add left padding for row controls */
+  border: none;
+  user-select: none;
+  display: inline-block;
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.ga-notes-container .ga-spreadsheet-column-controls {
+  position: absolute;
+  top: -24px;
+  left: 24px; /* Offset by the row controls width */
+  right: 0;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.ga-notes-container .ga-spreadsheet-row-controls {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.ga-notes-container .ga-spreadsheet-controls-inner {
+  display: flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #ddd);
+  background: var(--bg-color, white);
+}
+
+.ga-notes-container .ga-spreadsheet-control-btn {
+  border: none;
+  background: var(--bg-color, white);
+  color: var(--text-color, #333);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  transition: background-color 0.2s ease;
+}
+
+.ga-notes-container .ga-spreadsheet-control-btn:hover {
+  background-color: var(--hover-bg, #f0f0f0);
+  color: var(--hover-text, #000);
+}
+
+.ga-notes-container .ga-spreadsheet-control-btn:first-child {
+  border-right: 1px solid var(--border-color, #ddd);
+}
+
+.ga-notes-container .ga-spreadsheet-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.ga-notes-container .ga-spreadsheet-cell {
+  border: 1px solid var(--border-color, #ddd);
+  padding: 8px;
+  min-width: 60px;
+  height: 32px;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  vertical-align: top;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.ga-notes-container .ga-spreadsheet-cell:focus {
+  outline: none;
+  background-color: #84ac8d67;
+  box-shadow: inset 0 0 0 2px var(--hover-text, #000);
+}
+
+.ga-notes-container .ga-spreadsheet-container.selected {
+  box-shadow: 0 0 0 2px var(--hover-text, #000);
+}
+
+.ga-notes-container .ga-spreadsheet-cell * {
+  max-width: 100%;
+}

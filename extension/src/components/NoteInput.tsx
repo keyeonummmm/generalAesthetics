@@ -3,8 +3,10 @@ import { Attachment } from '../lib/Attachment';
 import { AttachmentOperation } from './AttachmentOperation';
 import { TextFormatter } from '../lib/TextFormatter';
 import { ListFormatter } from '../lib/ListFormatter';
+import { SpreadsheetFormatter } from '../lib/SpreadsheetFormatter';
 import '../styles/components/note-input.css';
 import '../styles/components/list-formatting.css';
+import '../styles/components/spreadsheet.css';
 
 interface NoteInputProps {
   // Core note data only
@@ -45,6 +47,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   // Use external ref if provided, otherwise create our own
   const contentRef = externalContentRef || useRef<HTMLDivElement>(null);
   const [lastSelectionRange, setLastSelectionRange] = useState<Range | null>(null);
+  const [isInteractingWithSpreadsheet, setIsInteractingWithSpreadsheet] = useState(false);
   
   // Sync with prop value when it changes
   useEffect(() => {
@@ -92,9 +95,27 @@ const NoteInput: React.FC<NoteInputProps> = ({
       // Only update if the content has changed to avoid cursor position issues
       if (contentRef.current.innerHTML !== content) {
         TextFormatter.setFormattedContent(contentRef.current, content);
+        
+        // Initialize spreadsheets after setting content
+        setTimeout(() => {
+          if (contentRef.current) {
+            SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+          }
+        }, 0);
       }
     }
   }, [title, content]);
+
+  // Initialize formatters when contentRef is available
+  useEffect(() => {
+    if (contentRef.current) {
+      // Initialize TextFormatter
+      TextFormatter.initialize(contentRef.current);
+      
+      // Initialize SpreadsheetFormatter
+      SpreadsheetFormatter.initialize(contentRef.current);
+    }
+  }, [contentRef.current]);
 
   // Save selection when user clicks in the content area
   const saveSelection = useCallback(() => {
@@ -106,14 +127,27 @@ const NoteInput: React.FC<NoteInputProps> = ({
       
       // Only save if selection is within our content
       if (contentRef.current.contains(range.commonAncestorContainer)) {
-        setLastSelectionRange(range.cloneRange());
+        // Don't save selection if it's within a spreadsheet cell
+        const cell = (range.commonAncestorContainer as Element)?.closest?.('.ga-spreadsheet-cell') ||
+                    (range.commonAncestorContainer.parentElement as Element)?.closest?.('.ga-spreadsheet-cell');
       }
     }
   }, []);
   
   // Restore selection if needed
   const restoreSelection = useCallback(() => {
-    if (!contentRef.current || !lastSelectionRange) return;
+    if (!contentRef.current || !lastSelectionRange) return false;
+    
+    // Check if we're currently interacting with a spreadsheet
+    if (isInteractingWithSpreadsheet) {
+      return false;
+    }
+    
+    // Check if a cell is already focused
+    const focusedCell = SpreadsheetFormatter.getCurrentFocusedCell();
+    if (focusedCell && document.activeElement === focusedCell) {
+      return false;
+    }
     
     const selection = window.getSelection();
     if (selection) {
@@ -121,25 +155,46 @@ const NoteInput: React.FC<NoteInputProps> = ({
         selection.removeAllRanges();
         selection.addRange(lastSelectionRange.cloneRange());
         return true;
-      } catch (e) {
-        console.error('[NoteInput] Error restoring selection:', e);
-      }
+      } catch (e) {}
     }
     return false;
-  }, [lastSelectionRange]);
+  }, [lastSelectionRange, isInteractingWithSpreadsheet]);
 
   // Keep track of selection changes
   useEffect(() => {
     const handleSelectionChange = () => {
       if (!contentRef.current) return;
-      saveSelection();
+      
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      
+      const range = selection.getRangeAt(0);
+      
+      // Check if selection is inside a spreadsheet cell
+      const cell = (range.commonAncestorContainer as Element)?.closest?.('.ga-spreadsheet-cell') ||
+                  (range.commonAncestorContainer.parentElement as Element)?.closest?.('.ga-spreadsheet-cell');
+      
+      if (cell) {
+        setIsInteractingWithSpreadsheet(true);
+        
+        // Tell the SpreadsheetFormatter that user has interacted
+        SpreadsheetFormatter.setUserInteracted(true);
+      } else if (contentRef.current.contains(range.commonAncestorContainer)) {
+        // Selection is in content area but not in a cell
+        saveSelection();
+        
+        // If we were interacting with a spreadsheet before, we're not anymore
+        if (isInteractingWithSpreadsheet) {
+          setIsInteractingWithSpreadsheet(false);
+        }
+      }
     };
     
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [saveSelection]);
+  }, [saveSelection, isInteractingWithSpreadsheet]);
 
   const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
     if (titleRef.current) {
@@ -150,6 +205,21 @@ const NoteInput: React.FC<NoteInputProps> = ({
 
   const handleContentInput = (e: React.FormEvent<HTMLDivElement>) => {
     if (contentRef.current) {
+      
+      // Check if input is happening in a spreadsheet cell
+      const target = e.target as Node;
+      const cell = (target as Element)?.closest?.('.ga-spreadsheet-cell') ||
+                  (target.parentElement as Element)?.closest?.('.ga-spreadsheet-cell');
+      
+      if (cell) {
+        // Tell the SpreadsheetFormatter that user has interacted
+        SpreadsheetFormatter.setUserInteracted(true);
+        return;
+      }
+      
+      // Serialize any spreadsheets in the content before getting formatted content
+      SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+      
       // Get formatted content including HTML
       const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
       onContentChange(formattedContent);
@@ -158,7 +228,10 @@ const NoteInput: React.FC<NoteInputProps> = ({
       // This ensures formatting is applied after manual editing or browser auto-correction
       setTimeout(() => {
         if (contentRef.current && contentRef.current.contains(document.activeElement)) {
-          TextFormatter.applyActiveFormats();
+          // Don't apply text formatting if we're in a spreadsheet cell
+          if (!isInteractingWithSpreadsheet) {
+            TextFormatter.applyActiveFormats();
+          }
         }
       }, 0);
     }
@@ -188,6 +261,17 @@ const NoteInput: React.FC<NoteInputProps> = ({
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Set user interacted flag for SpreadsheetFormatter
+    SpreadsheetFormatter.setUserInteracted(true);
+    
+    // Check if we're in a spreadsheet cell
+    const target = e.target as Element;
+    const cell = target.closest('.ga-spreadsheet-cell');
+    
+    if (cell) {
+      return;
+    }
+    
     // Don't handle special keys for formatting
     if (e.ctrlKey || e.metaKey || e.altKey) {
       return;
@@ -252,6 +336,10 @@ const NoteInput: React.FC<NoteInputProps> = ({
   const handleKeyUp = (e: React.KeyboardEvent) => {
     if (!contentRef.current) return;
     
+    // Check if we're in a spreadsheet cell
+    const target = e.target as Element;
+    const cell = target.closest('.ga-spreadsheet-cell');
+
     // Ignore special keys and title input
     if (e.ctrlKey || e.metaKey || e.altKey || e.currentTarget === titleRef.current) {
       return;
@@ -274,6 +362,12 @@ const NoteInput: React.FC<NoteInputProps> = ({
   
   // Handle paste events
   const handlePaste = (e: React.ClipboardEvent) => {
+    // Set user interacted flag for SpreadsheetFormatter
+    SpreadsheetFormatter.setUserInteracted(true);
+    
+    // Check if we're pasting into a spreadsheet cell
+    const target = e.target as Element;
+    const cell = target.closest('.ga-spreadsheet-cell');
     
     // Don't handle paste in title (only plain text)
     if (e.currentTarget === titleRef.current) {
@@ -302,15 +396,46 @@ const NoteInput: React.FC<NoteInputProps> = ({
   };
   
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Set user interacted flag for SpreadsheetFormatter
+    SpreadsheetFormatter.setUserInteracted(true);
+    
     if (e.currentTarget === contentRef.current) {
-      // Save selection on mouse down in content area
+      // Check if the event target is a spreadsheet cell or within it
+      const target = e.target as HTMLElement;
+      const cell = target.closest('.ga-spreadsheet-cell');
+      
+      // For other elements, proceed with normal selection handling
+      
+      // If we were interacting with a spreadsheet before, we're not anymore
+      if (isInteractingWithSpreadsheet) {
+        setIsInteractingWithSpreadsheet(false);
+      }
+      
       saveSelection();
     }
   };
   
   const handleClick = (e: React.MouseEvent) => {
+    // Set user interacted flag for SpreadsheetFormatter
+    SpreadsheetFormatter.setUserInteracted(true);
+    
     if (e.currentTarget === contentRef.current) {
-      // Ensure focus is in the content area
+      // Check if the event target is a spreadsheet cell or within it
+      const target = e.target as HTMLElement;
+      const cell = target.closest('.ga-spreadsheet-cell');
+      const container = target.closest('.ga-spreadsheet-container');
+      
+
+      if (container) {
+        setIsInteractingWithSpreadsheet(true);
+        return;
+      }
+
+      // If we were interacting with a spreadsheet before, we're not anymore
+      if (isInteractingWithSpreadsheet) {
+        setIsInteractingWithSpreadsheet(false);
+      }
+      
       contentRef.current.focus();
       
       // Save selection on click
@@ -321,14 +446,37 @@ const NoteInput: React.FC<NoteInputProps> = ({
   const handleFocus = (e: React.FocusEvent) => {
     // When focusing content area, restore last selection if possible
     if (e.currentTarget === contentRef.current) {
-      restoreSelection();
+      // Don't restore selection if focus is moving to a spreadsheet cell
+      const activeElement = document.activeElement;
+      if (activeElement && activeElement.classList.contains('ga-spreadsheet-cell')) {
+        return;
+      }
+      
+      
+      // Only restore selection if we're not interacting with a spreadsheet
+      if (!isInteractingWithSpreadsheet) {
+        restoreSelection();
+      }
     }
   };
   
   const handleBlur = (e: React.FocusEvent) => {
-    // Save selection on blur
+    // Save selection on blur, unless we're moving focus to a spreadsheet cell
     if (e.currentTarget === contentRef.current) {
-      saveSelection();
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      
+      
+      // Check if the new active element is a spreadsheet cell
+      if (relatedTarget && relatedTarget.classList.contains('ga-spreadsheet-cell')) {
+        // Set the interacting flag
+        setIsInteractingWithSpreadsheet(true);
+        return;
+      }
+      
+      // If we're not moving to a spreadsheet cell, save selection
+      if (!isInteractingWithSpreadsheet) {
+        saveSelection();
+      }
     }
   };
 

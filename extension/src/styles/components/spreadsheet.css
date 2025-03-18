@@ -1,0 +1,113 @@
+/* Spreadsheet styles */
+.ga-spreadsheet-container {
+  position: relative;
+  margin: 16px 0;
+  border: none;
+  user-select: none;
+  display: inline-block;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+/* Column controls above the table */
+.ga-spreadsheet-column-controls {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  right: 0;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Row controls to the left of the table */
+.ga-spreadsheet-row-controls {
+  position: absolute;
+  left: -24px;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Container for the +/- buttons */
+.ga-spreadsheet-controls-inner {
+  display: flex;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #ddd);
+}
+
+/* Individual control buttons */
+.ga-spreadsheet-control-btn {
+  border: none;
+  background: var(--bg-color, white);
+  color: var(--text-color, #333);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  transition: background-color 0.2s ease;
+}
+
+.ga-spreadsheet-control-btn:hover {
+  background-color: var(--hover-bg, #f0f0f0);
+  color: var(--hover-text, #000);
+}
+
+.ga-spreadsheet-control-btn:first-child {
+  border-right: 1px solid var(--border-color, #ddd);
+}
+
+/* Table styles */
+.ga-spreadsheet-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Cell styles */
+.ga-spreadsheet-cell {
+  border: 1px solid var(--border-color, #ddd);
+  padding: 8px;
+  min-width: 60px;
+  height: 32px;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  vertical-align: top;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.ga-spreadsheet-cell:focus {
+  outline: none;
+  border-color: #84ac8d67;
+  box-shadow: inset 0 0 0 2px var(--hover-text, #000);
+}
+
+/* When the entire spreadsheet is selected */
+.ga-spreadsheet-container.selected {
+  box-shadow: 0 0 0 2px var(--hover-text, #000);
+}
+
+/* Prevent cell content from overflowing */
+.ga-spreadsheet-cell * {
+  max-width: 100%;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .ga-spreadsheet-cell {
+    padding: 4px;
+    font-size: 12px;
+  }
+} 
