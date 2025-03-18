@@ -60,6 +60,7 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Refs for popup positioning and click outside detection
   const formatButtonRef = useRef<HTMLButtonElement>(null);
   const listButtonRef = useRef<HTMLButtonElement>(null);
+  const spreadsheetButtonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const listPopupRef = useRef<HTMLDivElement>(null);
   
@@ -590,6 +591,35 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     };
   }, [showListPopup]);
   
+  // Handle spreadsheet button click (placeholder for future implementation)
+  const handleSpreadsheetClick = () => {
+    if (!contentRef.current) {
+      console.error('[FormatToolbar] No content element available');
+      return;
+    }
+    
+    // Save current selection before applying format
+    saveSelection();
+    
+    // Focus the content area if not already focused
+    if (document.activeElement !== contentRef.current) {
+      contentRef.current.focus();
+    }
+    
+    // If already focused, restore selection if needed
+    if (lastSelectionRef.current) {
+      restoreSelection();
+    }
+    
+    // Future implementation will go here
+    console.log('Spreadsheet button clicked - functionality to be implemented');
+    
+    // Notify parent of format change if needed
+    if (onFormatChange) {
+      onFormatChange();
+    }
+  };
+  
   // Render just the buttons if standalone mode is enabled
   if (standalone) {
     return (
@@ -612,6 +642,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           onClick={toggleListPopup}
         >
           ≡
+        </button>
+        
+        {/* Spreadsheet button */}
+        <button
+          ref={spreadsheetButtonRef}
+          className="format-button spreadsheet-button"
+          title="Spreadsheet"
+          onClick={handleSpreadsheetClick}
+        >
+          ⊞
         </button>
         
         {/* Format popup */}
@@ -699,6 +739,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
         onClick={toggleListPopup}
       >
         ≡
+      </button>
+      
+      {/* Spreadsheet button */}
+      <button
+        ref={spreadsheetButtonRef}
+        className="format-button spreadsheet-button"
+        title="Spreadsheet"
+        onClick={handleSpreadsheetClick}
+      >
+        ⊞
       </button>
       
       {/* Format popup */}

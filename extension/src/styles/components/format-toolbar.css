@@ -73,35 +73,47 @@
 
 /* Format Button Styles */
 .format-button.format-main-button:hover,
-.format-button.format-main-button.active {
+.format-button.format-main-button.active,
+.format-button.list-button:hover,
+.format-button.list-button.active,
+.format-button.spreadsheet-button:hover,
+.format-button.spreadsheet-button.active {
   background-color: var(--hover-bg, #f0f0f0);
   color: var(--hover-text, #000);
   border-color: var(--border-color, #ccc);
 }
 
-.format-button.format-main-button.has-active-format {
+.format-button.format-main-button.has-active-format,
+.format-button.list-button.has-active-format,
+.format-button.spreadsheet-button.has-active-format {
   background-color: var(--hover-bg, #e6e6e6);
   border-color: var(--border-color, #bbb);
   color: var(--hover-text, #000);
 }
 
 /* Footer format button styles */
-.footer-left .format-button.format-main-button {
+.footer-left .format-button.format-main-button,
+.footer-left .format-button.list-button,
+.footer-left .format-button.spreadsheet-button {
   font-size: 16px;
   padding: 4px 8px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border-color, #ddd);
   color: var(--text-color, #333);
   height: 36px;
   min-width: 36px;
   transition: color 0.2s ease;
 }
 
-.footer-left .format-button.format-main-button:hover {
+.footer-left .format-button.format-main-button:hover,
+.footer-left .format-button.list-button:hover,
+.footer-left .format-button.spreadsheet-button:hover {
   color: var(--hover-text, #000);
 }
 
-.footer-left .format-button.format-main-button.has-active-format {
+.footer-left .format-button.format-main-button.has-active-format,
+.footer-left .format-button.list-button.has-active-format,
+.footer-left .format-button.spreadsheet-button.has-active-format {
   color: var(--hover-text, #000);
 }
 
