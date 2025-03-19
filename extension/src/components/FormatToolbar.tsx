@@ -41,7 +41,7 @@ const LIST_OPTIONS = [
 
 interface FormatToolbarProps {
   contentRef: React.RefObject<HTMLDivElement>;
-  onFormatChange?: () => void;
+  onFormatChange?: (event?: { type: string, isEmpty?: boolean }) => void;
   standalone?: boolean; // New prop to control rendering style
 }
 
@@ -631,17 +631,54 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           // Insert spreadsheet at selection
           const success = SpreadsheetFormatter.insertSpreadsheet();
           
-          // Notify parent of format change
-          if (onFormatChange) {
-            onFormatChange();
+          // Make sure to serialize the spreadsheet immediately after insertion
+          // This ensures the spreadsheet data is captured in the content
+          if (success && contentRef.current) {
+            setTimeout(() => {
+              if (contentRef.current) {
+                SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+              }
+              
+              // Notify parent of format change with explicit spreadsheet flag
+              if (onFormatChange) {
+                // Use a special event object to indicate this is a spreadsheet insertion
+                onFormatChange({
+                  type: 'spreadsheet-insert',
+                  isEmpty: true
+                });
+              }
+            }, 50);
+          } else {
+            // Notify parent of format change anyway
+            if (onFormatChange) {
+              onFormatChange();
+            }
           }
         } else {
           // Insert spreadsheet anyway
           const success = SpreadsheetFormatter.insertSpreadsheet();
           
-          // Notify parent of format change
-          if (onFormatChange) {
-            onFormatChange();
+          // Make sure to serialize the spreadsheet immediately after insertion
+          if (success && contentRef.current) {
+            setTimeout(() => {
+              if (contentRef.current) {
+                SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+              }
+              
+              // Notify parent of format change with explicit spreadsheet flag
+              if (onFormatChange) {
+                // Use a special event object to indicate this is a spreadsheet insertion
+                onFormatChange({
+                  type: 'spreadsheet-insert',
+                  isEmpty: true
+                });
+              }
+            }, 50);
+          } else {
+            // Notify parent of format change anyway
+            if (onFormatChange) {
+              onFormatChange();
+            }
           }
         }
       }, 10);
@@ -657,9 +694,27 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     // Insert spreadsheet
     const success = SpreadsheetFormatter.insertSpreadsheet();
     
-    // Notify parent of format change
-    if (onFormatChange) {
-      onFormatChange();
+    // Make sure to serialize the spreadsheet immediately after insertion
+    if (success && contentRef.current) {
+      setTimeout(() => {
+        if (contentRef.current) {
+          SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+        }
+        
+        // Notify parent of format change with explicit spreadsheet flag
+        if (onFormatChange) {
+          // Use a special event object to indicate this is a spreadsheet insertion
+          onFormatChange({
+            type: 'spreadsheet-insert',
+            isEmpty: true
+          });
+        }
+      }, 50);
+    } else {
+      // Notify parent of format change anyway
+      if (onFormatChange) {
+        onFormatChange();
+      }
     }
   };
   

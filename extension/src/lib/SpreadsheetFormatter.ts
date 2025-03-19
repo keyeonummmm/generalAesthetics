@@ -629,6 +629,8 @@ export class SpreadsheetFormatter {
         const columns = table.rows[0].cells.length;
         spreadsheet.setAttribute('data-rows', rows.toString());
         spreadsheet.setAttribute('data-columns', columns.toString());
+        // Add a special attribute to mark this as a spreadsheet
+        spreadsheet.setAttribute('data-spreadsheet', 'true');
         
         // Store cell content as data attributes
         for (let i = 0; i < rows; i++) {

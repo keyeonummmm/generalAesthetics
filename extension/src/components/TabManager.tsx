@@ -6,6 +6,8 @@ import '../styles/components/tab-manager.css';
 import { v4 as uuidv4 } from 'uuid';
 import { TabCacheManager, Tab as CacheTab, TabCache, AttachmentReference } from '../lib/TabCacheManager';
 import { TabAssociationManager } from '../lib/TabAssociationManager';
+import { SpreadsheetFormatter } from '../lib/SpreadsheetFormatter';
+import { TextFormatter } from '../lib/TextFormatter';
 
 interface Tab {
   id: string;
@@ -23,6 +25,7 @@ interface Tab {
   lastEdited: string;
   pinned?: boolean; // Add pinned property to support tab pinning
   attachmentSectionExpanded?: boolean; // Track if attachment section is expanded
+  spreadsheetData?: boolean; // Add flag to indicate the tab contains spreadsheet data
 }
 
 interface TabManagerProps {
@@ -284,6 +287,15 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       // Load attachments for the active tab if they're not already loaded
       if (activeTab.attachments && activeTab.attachments.length > 0 && !activeTab.loadedAttachments) {
         loadAttachmentsForTab(activeTab.id);
+      }
+      
+      // Deserialize spreadsheets if the active tab has spreadsheet data
+      if (activeTab.spreadsheetData && contentRef.current) {
+        setTimeout(() => {
+          if (contentRef.current) {
+            SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+          }
+        }, 100);
       }
     }
   }, [tabs, activeTabId]);
@@ -722,6 +734,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
     // Create a new tab
     const newTabId = note ? `tab-${note.id}` : `new-${uuidv4()}`;
+    
+    // Check if the note contains spreadsheet data
+    let hasSpreadsheet = false;
+    if (note && note.content) {
+      // First simple check
+      hasSpreadsheet = note.content.includes('ga-spreadsheet-container');
+      
+      // If not found, use a more robust detection using regex
+      if (!hasSpreadsheet) {
+        hasSpreadsheet = /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(note.content);
+      }
+    }
+    
     const newTab: Tab = {
       id: newTabId,
       title: note ? note.title : '',
@@ -733,7 +758,8 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
       syncStatus: note ? 'synced' : 'pending',
       lastEdited: new Date().toISOString(),
       pinned: false, // Ensure new tabs are never pinned by default
-      attachmentSectionExpanded: false // Default to collapsed for all new tabs
+      attachmentSectionExpanded: false, // Default to collapsed for all new tabs
+      spreadsheetData: hasSpreadsheet // Set spreadsheet data flag based on detection
     };
 
     setTabs((prevTabs) => {
@@ -855,8 +881,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     // Clean up any orphaned attachments
     await TabCacheManager.cleanupOrphanedAttachments();
   };
-
-  // Update useImperativeHandle to expose the new methods
+  
   useImperativeHandle(ref, () => ({
     addTab: (note: Note) => {
       // Use the component-level addTab function for consistency
@@ -917,6 +942,19 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             // Check if this is a new note or an update to an existing note
             const isNewNote = !tab.noteId && note.id;
             
+            // Check if content contains spreadsheet data using more robust detection
+            let hasSpreadsheet = note.content.includes('ga-spreadsheet-container');
+            
+            // If not found, use regex detection for empty spreadsheets
+            if (!hasSpreadsheet) {
+              hasSpreadsheet = /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(note.content);
+            }
+            
+            // If the tab already had spreadsheet data, consider preserving that information
+            if (tab.spreadsheetData) {
+              hasSpreadsheet = true;
+            }
+            
             return {
               ...tab,
               noteId: note.id,
@@ -926,6 +964,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
               attachments: note.attachments,
               isNew: false,
               syncStatus: 'synced' as const,
+              spreadsheetData: hasSpreadsheet,
               // For new notes, set attachmentSectionExpanded to false
               // For existing notes, preserve the current state
               attachmentSectionExpanded: isNewNote ? false : tab.attachmentSectionExpanded
@@ -935,6 +974,16 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         });
         return updatedTabs;
       });
+      
+      // Schedule deserialization for the updated tab if it contains spreadsheet data
+      const tab = tabs.find(tab => tab.id === tabId);
+      if (tab && contentRef.current && note.content.includes('ga-spreadsheet-container')) {
+        setTimeout(() => {
+          if (contentRef.current) {
+            SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+          }
+        }, 100);
+      }
     },
     isNoteOpenInAnyTab: (noteId: string) => {
       return tabs.some(tab => tab.noteId === noteId || tab.id === noteId);
@@ -992,6 +1041,22 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   }));
 
   const handleTabClick = (tabId: string) => {
+    // First, serialize any spreadsheets in the current active tab if it exists
+    const currentActiveTab = tabs.find(tab => tab.id === activeTabId);
+    if (currentActiveTab && contentRef.current) {
+      // Serialize spreadsheets before switching tabs
+      SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+      
+      // Update the tab content with serialized spreadsheet data
+      const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+      if (formattedContent !== currentActiveTab.content) {
+        updateTabState(currentActiveTab.id, {
+          content: formattedContent,
+          syncStatus: 'pending'
+        }, false, false);
+      }
+    }
+    
     setActiveTabId(tabId);
     
     // Associate this tab with the current page
@@ -1002,6 +1067,13 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (tab && tab.attachments && tab.attachments.length > 0 && !tab.loadedAttachments) {
       loadAttachmentsForTab(tabId);
     }
+    
+    // Schedule deserilization of spreadsheets after the tab content is rendered
+    setTimeout(() => {
+      if (contentRef.current && tab?.spreadsheetData) {
+        SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+      }
+    }, 100);
   };
 
   // Function to update tab associations
@@ -1071,13 +1143,32 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   };
   
   const handleContentChange = (tabId: string, content: string) => {
-    // Check if the content has HTML formatting
+    // Determine if content is rich text (contains HTML tags)
     const isRichText = /<[a-z][\s\S]*>/i.test(content);
+    
+    // Check if content contains spreadsheet data using robust detection
+    let hasSpreadsheet = content.includes('ga-spreadsheet-container');
+    
+    // If not found, use a more robust detection using regex
+    if (!hasSpreadsheet) {
+      // Look for spreadsheet-related structure even if it's an empty spreadsheet
+      hasSpreadsheet = /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(content);
+    }
+    
+    // If the tab already had spreadsheet data, preserve that information
+    const existingTab = tabs.find(tab => tab.id === tabId);
+    if (existingTab?.spreadsheetData && content.trim().length > 0) {
+      // If we previously had spreadsheet data and there's still content, 
+      // preserve the spreadsheetData flag unless we're certain it's gone
+      hasSpreadsheet = true;
+    }
     
     updateTabState(tabId, {
       content,
       isRichText,
-      syncStatus: 'pending'
+      syncStatus: 'pending',
+      // Store flag indicating this tab contains spreadsheet data
+      spreadsheetData: hasSpreadsheet
     });
   };
 
@@ -1169,6 +1260,28 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     if (!tab) return;
 
     try {
+      // Ensure spreadsheets are serialized before saving
+      if (contentRef.current && activeTabId === tabId) {
+        SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+        
+        // Get the updated content with serialized spreadsheets
+        const updatedContent = TextFormatter.getFormattedContent(contentRef.current);
+        
+        // Update the tab content if needed
+        if (updatedContent !== tab.content) {
+          // Use the updated content for saving
+          note.content = updatedContent;
+          
+          // Also update the tab content
+          setTabs(prevTabs => prevTabs.map(t => {
+            if (t.id === tabId) {
+              return { ...t, content: updatedContent };
+            }
+            return t;
+          }));
+        }
+      }
+
       // Load full attachments if they're not already loaded
       let attachmentsToSave: Attachment[] = [];
       
@@ -1184,6 +1297,20 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
       // Determine if content is rich text (contains HTML tags)
       const isRichText = /<[a-z][\s\S]*>/i.test(tab.content);
+      
+      // Check if content contains spreadsheet data using robust detection
+      let hasSpreadsheet = tab.content.includes('ga-spreadsheet-container');
+      
+      // If not found, use a more robust detection using regex
+      if (!hasSpreadsheet) {
+        // Look for spreadsheet-related structure even if it's an empty spreadsheet
+        hasSpreadsheet = /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(tab.content);
+      }
+      
+      // If the tab already had spreadsheet data, preserve that information
+      if (tab.spreadsheetData) {
+        hasSpreadsheet = true;
+      }
 
       let savedNote: Note;
       
@@ -1212,6 +1339,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             noteId: savedNote.id,
             version: savedNote.version,
             isRichText: savedNote.isRichText, // Update isRichText flag
+            spreadsheetData: hasSpreadsheet, // Set spreadsheet data flag
             syncStatus: 'synced' as const,
             // Preserve the current attachment section expanded state
             attachmentSectionExpanded: t.attachmentSectionExpanded
@@ -1325,6 +1453,15 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
             loadAttachmentsForTab(activeTab.id);
           }
+          
+          // Deserialize spreadsheets for the active tab if it has spreadsheet data
+          if (activeTab && activeTab.spreadsheetData) {
+            setTimeout(() => {
+              if (contentRef.current) {
+                SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+              }
+            }, 100);
+          }
         } else {
           console.error('Failed to sync tabs via background script:', response?.error);
           
@@ -1342,6 +1479,15 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             const activeTab = syncedCache.tabs.find(tab => tab.id === syncedCache.activeTabId);
             if (activeTab && activeTab.attachments && activeTab.attachments.length > 0) {
               loadAttachmentsForTab(activeTab.id);
+            }
+            
+            // Deserialize spreadsheets for the active tab if it has spreadsheet data
+            if (activeTab && activeTab.spreadsheetData) {
+              setTimeout(() => {
+                if (contentRef.current) {
+                  SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+                }
+              }, 100);
             }
           }
         }
@@ -1415,17 +1561,28 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
         onAttachmentRemove={(attachment) => handleAttachmentRemove(activeTab.id, attachment)}
         isAttachmentSectionExpanded={activeTab.attachmentSectionExpanded}
         onAttachmentSectionExpandedChange={(isExpanded) => handleAttachmentSectionExpandedChange(activeTab.id, isExpanded)}
-        onFormatChange={() => handleFormatChange(activeTab.id)}
+        onFormatChange={(event) => handleFormatChange(activeTab.id, event)}
       />
     );
   };
 
   // Add a new handler for format changes
-  const handleFormatChange = (tabId: string) => {
+  const handleFormatChange = (tabId: string, event?: { type: string, isEmpty?: boolean }) => {
     const tab = tabs.find(t => t.id === tabId);
     if (tab) {
-      // Update the tab's sync status
-      updateTabState(tabId, { syncStatus: 'pending' });
+      // Check if this is a spreadsheet insertion event
+      const isSpreadsheetInsert = event?.type === 'spreadsheet-insert';
+      
+      if (isSpreadsheetInsert) {
+        // For spreadsheet insertions, explicitly set the spreadsheetData flag
+        updateTabState(tabId, { 
+          syncStatus: 'pending',
+          spreadsheetData: true // Always set to true for spreadsheet insertions
+        });
+      } else {
+        // For other formatting changes, just update the sync status
+        updateTabState(tabId, { syncStatus: 'pending' });
+      }
       
       // Notify parent of changes
       onChangeStatus(true);

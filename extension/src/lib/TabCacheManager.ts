@@ -16,6 +16,7 @@ export interface Tab {
   noteId?: string;
   lastEdited: string;
   pinned?: boolean;
+  spreadsheetData?: boolean;
 }
 
 export interface AttachmentReference {

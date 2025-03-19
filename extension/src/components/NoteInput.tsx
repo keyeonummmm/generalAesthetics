@@ -23,7 +23,7 @@ interface NoteInputProps {
   isAttachmentSectionExpanded?: boolean;
   onAttachmentSectionExpandedChange?: (isExpanded: boolean) => void;
   // Format change handler
-  onFormatChange?: () => void;
+  onFormatChange?: (event?: { type: string, isEmpty?: boolean }) => void;
   // Add contentRef prop
   contentRef?: React.RefObject<HTMLDivElement>;
 }
@@ -214,6 +214,20 @@ const NoteInput: React.FC<NoteInputProps> = ({
       if (cell) {
         // Tell the SpreadsheetFormatter that user has interacted
         SpreadsheetFormatter.setUserInteracted(true);
+        
+        // Even for spreadsheet cell edits, we should serialize and update the content
+        // This ensures changes in spreadsheet cells are captured in the tab cache
+        setTimeout(() => {
+          if (contentRef.current) {
+            // Serialize any spreadsheets in the content
+            SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+            
+            // Get formatted content including HTML
+            const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+            onContentChange(formattedContent);
+          }
+        }, 0);
+        
         return;
       }
       
@@ -237,15 +251,24 @@ const NoteInput: React.FC<NoteInputProps> = ({
     }
   };
   
-  const handleFormatChange = () => {
+  const handleFormatChange = (event?: { type: string, isEmpty?: boolean }) => {
     // When formatting is applied, we need to trigger content change
     if (contentRef.current) {
+      // Check if this is a spreadsheet insertion event
+      const isSpreadsheetInsert = event?.type === 'spreadsheet-insert';
+      
+      // First, serialize any spreadsheets to ensure they're captured in the content
+      if (isSpreadsheetInsert) {
+        SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+      }
+      
+      // Get formatted content including HTML
       const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
       onContentChange(formattedContent);
       
       // Call the parent's format change handler if provided
       if (onFormatChange) {
-        onFormatChange();
+        onFormatChange(event);
       }
     }
   };
