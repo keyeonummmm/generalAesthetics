@@ -43,9 +43,10 @@ interface FormatToolbarProps {
   contentRef: React.RefObject<HTMLDivElement>;
   onFormatChange?: (event?: { type: string, isEmpty?: boolean }) => void;
   standalone?: boolean; // New prop to control rendering style
+  tabId: string; // Add tabId prop for SpreadsheetFormatter
 }
 
-const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange, standalone = false }) => {
+const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange, standalone = false, tabId }) => {
   const [formatState, setFormatState] = useState<Record<string, string | boolean>>({});
   const [listFormatState, setListFormatState] = useState<{
     bulletedList: boolean;
@@ -101,9 +102,11 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   useEffect(() => {
     if (contentRef.current && !isInitialized) {
       TextFormatter.initialize(contentRef.current);
+      // Initialize SpreadsheetFormatter with the tab ID
+      SpreadsheetFormatter.initialize(contentRef.current, tabId);
       setIsInitialized(true);
     }
-  }, [contentRef, isInitialized]);
+  }, [contentRef, isInitialized, tabId]);
   
   // Handle selection changes to update format state
   useEffect(() => {
@@ -514,7 +517,7 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     
     
     // Notify SpreadsheetFormatter of user interaction
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     // Apply formatting directly based on button title
     if (button.title === 'Bold') {
@@ -542,7 +545,7 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     e.stopPropagation();
     
     // Notify SpreadsheetFormatter of user interaction
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
   };
   
   // Add direct DOM event listeners when popup is shown
@@ -612,7 +615,7 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     }
     
     // Notify SpreadsheetFormatter of user interaction
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     // Save current selection before applying format
     saveSelection();
@@ -629,23 +632,34 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           const restored = restoreSelection();
 
           // Insert spreadsheet at selection
-          const success = SpreadsheetFormatter.insertSpreadsheet();
+          const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
           
           // Make sure to serialize the spreadsheet immediately after insertion
           // This ensures the spreadsheet data is captured in the content
           if (success && contentRef.current) {
             setTimeout(() => {
               if (contentRef.current) {
+                // First, serialize the spreadsheet to ensure it's captured in the content
                 SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
-              }
-              
-              // Notify parent of format change with explicit spreadsheet flag
-              if (onFormatChange) {
-                // Use a special event object to indicate this is a spreadsheet insertion
-                onFormatChange({
-                  type: 'spreadsheet-insert',
-                  isEmpty: true
-                });
+                
+                // Get the content with the serialized spreadsheet
+                const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+                
+                // Notify parent of format change with explicit spreadsheet flag
+                if (onFormatChange) {
+                  // Use a special event object to indicate this is a spreadsheet insertion
+                  onFormatChange({
+                    type: 'spreadsheet-insert',
+                    isEmpty: true
+                  });
+                }
+                
+                // Ensure the spreadsheet is fully interactive by deserializing it again
+                setTimeout(() => {
+                  if (contentRef.current) {
+                    SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                  }
+                }, 0);
               }
             }, 50);
           } else {
@@ -656,22 +670,33 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           }
         } else {
           // Insert spreadsheet anyway
-          const success = SpreadsheetFormatter.insertSpreadsheet();
+          const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
           
           // Make sure to serialize the spreadsheet immediately after insertion
           if (success && contentRef.current) {
             setTimeout(() => {
               if (contentRef.current) {
+                // First, serialize the spreadsheet to ensure it's captured in the content
                 SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
-              }
-              
-              // Notify parent of format change with explicit spreadsheet flag
-              if (onFormatChange) {
-                // Use a special event object to indicate this is a spreadsheet insertion
-                onFormatChange({
-                  type: 'spreadsheet-insert',
-                  isEmpty: true
-                });
+                
+                // Get the content with the serialized spreadsheet
+                const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+                
+                // Notify parent of format change with explicit spreadsheet flag
+                if (onFormatChange) {
+                  // Use a special event object to indicate this is a spreadsheet insertion
+                  onFormatChange({
+                    type: 'spreadsheet-insert',
+                    isEmpty: true
+                  });
+                }
+                
+                // Ensure the spreadsheet is fully interactive by deserializing it again
+                setTimeout(() => {
+                  if (contentRef.current) {
+                    SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                  }
+                }, 0);
               }
             }, 50);
           } else {
@@ -692,22 +717,33 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     }
     
     // Insert spreadsheet
-    const success = SpreadsheetFormatter.insertSpreadsheet();
+    const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
     
     // Make sure to serialize the spreadsheet immediately after insertion
     if (success && contentRef.current) {
       setTimeout(() => {
         if (contentRef.current) {
+          // First, serialize the spreadsheet to ensure it's captured in the content
           SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
-        }
-        
-        // Notify parent of format change with explicit spreadsheet flag
-        if (onFormatChange) {
-          // Use a special event object to indicate this is a spreadsheet insertion
-          onFormatChange({
-            type: 'spreadsheet-insert',
-            isEmpty: true
-          });
+          
+          // Get the content with the serialized spreadsheet
+          const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+          
+          // Notify parent of format change with explicit spreadsheet flag
+          if (onFormatChange) {
+            // Use a special event object to indicate this is a spreadsheet insertion
+            onFormatChange({
+              type: 'spreadsheet-insert',
+              isEmpty: true
+            });
+          }
+          
+          // Ensure the spreadsheet is fully interactive by deserializing it again
+          setTimeout(() => {
+            if (contentRef.current) {
+              SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+            }
+          }, 0);
         }
       }, 50);
     } else {

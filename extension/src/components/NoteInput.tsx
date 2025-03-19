@@ -14,6 +14,8 @@ interface NoteInputProps {
   content: string;
   attachments?: Attachment[];
   noteId?: string;
+  // Tab ID for SpreadsheetFormatter
+  tabId: string;
   // Simple change handlers
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
@@ -32,6 +34,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   title,
   content,
   attachments,
+  tabId,
   onTitleChange,
   onContentChange,
   onAttachmentAdd,
@@ -99,12 +102,12 @@ const NoteInput: React.FC<NoteInputProps> = ({
         // Initialize spreadsheets after setting content
         setTimeout(() => {
           if (contentRef.current) {
-            SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current);
+            SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
           }
         }, 0);
       }
     }
-  }, [title, content]);
+  }, [title, content, tabId]);
 
   // Initialize formatters when contentRef is available
   useEffect(() => {
@@ -112,10 +115,10 @@ const NoteInput: React.FC<NoteInputProps> = ({
       // Initialize TextFormatter
       TextFormatter.initialize(contentRef.current);
       
-      // Initialize SpreadsheetFormatter
-      SpreadsheetFormatter.initialize(contentRef.current);
+      // Initialize SpreadsheetFormatter with tab ID
+      SpreadsheetFormatter.initialize(contentRef.current, tabId);
     }
-  }, [contentRef.current]);
+  }, [contentRef.current, tabId]);
 
   // Save selection when user clicks in the content area
   const saveSelection = useCallback(() => {
@@ -144,7 +147,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
     }
     
     // Check if a cell is already focused
-    const focusedCell = SpreadsheetFormatter.getCurrentFocusedCell();
+    const focusedCell = SpreadsheetFormatter.getCurrentFocusedCell(tabId);
     if (focusedCell && document.activeElement === focusedCell) {
       return false;
     }
@@ -158,7 +161,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
       } catch (e) {}
     }
     return false;
-  }, [lastSelectionRange, isInteractingWithSpreadsheet]);
+  }, [lastSelectionRange, isInteractingWithSpreadsheet, tabId]);
 
   // Keep track of selection changes
   useEffect(() => {
@@ -178,7 +181,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
         setIsInteractingWithSpreadsheet(true);
         
         // Tell the SpreadsheetFormatter that user has interacted
-        SpreadsheetFormatter.setUserInteracted(true);
+        SpreadsheetFormatter.setUserInteracted(tabId, true);
       } else if (contentRef.current.contains(range.commonAncestorContainer)) {
         // Selection is in content area but not in a cell
         saveSelection();
@@ -194,7 +197,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [saveSelection, isInteractingWithSpreadsheet]);
+  }, [saveSelection, isInteractingWithSpreadsheet, tabId]);
 
   const handleTitleInput = (e: React.FormEvent<HTMLDivElement>) => {
     if (titleRef.current) {
@@ -213,7 +216,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
       
       if (cell) {
         // Tell the SpreadsheetFormatter that user has interacted
-        SpreadsheetFormatter.setUserInteracted(true);
+        SpreadsheetFormatter.setUserInteracted(tabId, true);
         
         // Even for spreadsheet cell edits, we should serialize and update the content
         // This ensures changes in spreadsheet cells are captured in the tab cache
@@ -231,12 +234,17 @@ const NoteInput: React.FC<NoteInputProps> = ({
         return;
       }
       
-      // Serialize any spreadsheets in the content before getting formatted content
+      // Always serialize spreadsheets before getting formatted content
+      // This is critical to ensure all spreadsheet changes are captured
       SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
       
       // Get formatted content including HTML
       const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
-      onContentChange(formattedContent);
+      
+      // Check if content has changed (avoid unnecessary updates)
+      if (formattedContent !== content) {
+        onContentChange(formattedContent);
+      }
       
       // After content input, attempt to apply active formats
       // This ensures formatting is applied after manual editing or browser auto-correction
@@ -257,14 +265,17 @@ const NoteInput: React.FC<NoteInputProps> = ({
       // Check if this is a spreadsheet insertion event
       const isSpreadsheetInsert = event?.type === 'spreadsheet-insert';
       
-      // First, serialize any spreadsheets to ensure they're captured in the content
-      if (isSpreadsheetInsert) {
-        SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
-      }
+      // Always serialize spreadsheets to ensure they're captured in the content
+      // This is especially important for empty spreadsheets
+      SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
       
       // Get formatted content including HTML
       const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
-      onContentChange(formattedContent);
+      
+      // Check if content has changed (avoid unnecessary updates)
+      if (formattedContent !== content) {
+        onContentChange(formattedContent);
+      }
       
       // Call the parent's format change handler if provided
       if (onFormatChange) {
@@ -285,7 +296,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Set user interacted flag for SpreadsheetFormatter
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     // Check if we're in a spreadsheet cell
     const target = e.target as Element;
@@ -386,7 +397,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   // Handle paste events
   const handlePaste = (e: React.ClipboardEvent) => {
     // Set user interacted flag for SpreadsheetFormatter
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     // Check if we're pasting into a spreadsheet cell
     const target = e.target as Element;
@@ -405,6 +416,10 @@ const NoteInput: React.FC<NoteInputProps> = ({
       
       // Let the default paste happen, but then apply active formats
       setTimeout(() => {
+        // Always serialize any spreadsheets that might have been pasted
+        if (contentRef.current) {
+          SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+        }
         
         // Apply active formats to the pasted content if in continuous formatting mode
         TextFormatter.applyActiveFormats();
@@ -412,7 +427,37 @@ const NoteInput: React.FC<NoteInputProps> = ({
         // Update the formatted content
         if (contentRef.current) {
           const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
-          onContentChange(formattedContent);
+          
+          // Check for pasted spreadsheets
+          const hasSpreadsheet = formattedContent.includes('ga-spreadsheet-container') || 
+                               /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(formattedContent);
+                               
+          // If spreadsheets were pasted, make sure they have unique IDs
+          if (hasSpreadsheet) {
+            // Use a temporary div to clone spreadsheets
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = formattedContent;
+            SpreadsheetFormatter.cloneSpreadsheets(tempDiv, tabId);
+            const clonedContent = tempDiv.innerHTML;
+            
+            // Update the content with cloned spreadsheets
+            onContentChange(clonedContent);
+            
+            // Update the content element with the cloned content
+            if (contentRef.current) {
+              TextFormatter.setFormattedContent(contentRef.current, clonedContent);
+            }
+            
+            // Deserialize any spreadsheets after updating
+            setTimeout(() => {
+              if (contentRef.current) {
+                SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+              }
+            }, 0);
+          } else {
+            // No spreadsheets, just update content normally
+            onContentChange(formattedContent);
+          }
         }
       }, 0);
     }
@@ -420,7 +465,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   
   const handleMouseDown = (e: React.MouseEvent) => {
     // Set user interacted flag for SpreadsheetFormatter
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     if (e.currentTarget === contentRef.current) {
       // Check if the event target is a spreadsheet cell or within it
@@ -440,7 +485,7 @@ const NoteInput: React.FC<NoteInputProps> = ({
   
   const handleClick = (e: React.MouseEvent) => {
     // Set user interacted flag for SpreadsheetFormatter
-    SpreadsheetFormatter.setUserInteracted(true);
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
     
     if (e.currentTarget === contentRef.current) {
       // Check if the event target is a spreadsheet cell or within it

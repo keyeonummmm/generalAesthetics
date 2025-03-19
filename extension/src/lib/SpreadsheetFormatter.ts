@@ -4,28 +4,41 @@
  */
 
 export class SpreadsheetFormatter {
-  private static contentElement: HTMLElement | null = null;
-  private static currentFocusedCell: HTMLTableCellElement | null = null;
-  private static userInteracted: boolean = false;
+  // Track state per tab using a tabId key
+  private static contentElements: Map<string, HTMLElement | null> = new Map();
+  private static currentFocusedCells: Map<string, HTMLTableCellElement | null> = new Map();
+  private static userInteracted: Map<string, boolean> = new Map();
   
   /**
-   * Initialize the formatter with the content element
+   * Initialize the formatter with the content element for a specific tab
    */
-  public static initialize(contentElement: HTMLElement): void {
-    this.contentElement = contentElement;
+  public static initialize(contentElement: HTMLElement, tabId: string): void {
+    this.contentElements.set(tabId, contentElement);
+    this.currentFocusedCells.set(tabId, null);
+    this.userInteracted.set(tabId, false);
+  }
+
+  /**
+   * Clean up resources for a specific tab when it's closed
+   */
+  public static cleanup(tabId: string): void {
+    this.contentElements.delete(tabId);
+    this.currentFocusedCells.delete(tabId);
+    this.userInteracted.delete(tabId);
   }
   
   /**
    * Insert a new spreadsheet at the current selection or at the end of the content
    */
-  public static insertSpreadsheet(): boolean {
-    if (!this.contentElement) {
-      console.error('[SpreadsheetFormatter] No content element available');
+  public static insertSpreadsheet(tabId: string): boolean {
+    const contentElement = this.contentElements.get(tabId);
+    if (!contentElement) {
+      console.error('[SpreadsheetFormatter] No content element available for tab', tabId);
       return false;
     }
     
     // Create a new spreadsheet with 2x2 grid
-    const spreadsheetElement = this.createSpreadsheetElement(2, 2);
+    const spreadsheetElement = this.createSpreadsheetElement(2, 2, tabId);
     
     // Get current selection
     const selection = window.getSelection();
@@ -33,7 +46,7 @@ export class SpreadsheetFormatter {
       const range = selection.getRangeAt(0);
       
       // Check if selection is within our content area
-      if (this.contentElement.contains(range.commonAncestorContainer)) {
+      if (contentElement.contains(range.commonAncestorContainer)) {
         // Insert at current selection
         range.deleteContents();
         range.insertNode(spreadsheetElement);
@@ -46,20 +59,20 @@ export class SpreadsheetFormatter {
         
         // Don't automatically focus - wait for user interaction
         // Only focus if user has already interacted with something
-        if (this.userInteracted) {
-          this.focusFirstCell(spreadsheetElement);
+        if (this.userInteracted.get(tabId)) {
+          this.focusFirstCell(spreadsheetElement, tabId);
         }
         return true;
       }
     }
     
     // If there's no valid selection, append to the end
-    this.contentElement.appendChild(spreadsheetElement);
+    contentElement.appendChild(spreadsheetElement);
     
     // Don't automatically focus - wait for user interaction
     // Only focus if user has already interacted with something
-    if (this.userInteracted) {
-      this.focusFirstCell(spreadsheetElement);
+    if (this.userInteracted.get(tabId)) {
+      this.focusFirstCell(spreadsheetElement, tabId);
     }
     return true;
   }
@@ -67,11 +80,18 @@ export class SpreadsheetFormatter {
   /**
    * Create a new spreadsheet element with the specified number of rows and columns
    */
-  private static createSpreadsheetElement(rows: number, columns: number): HTMLElement {
+  private static createSpreadsheetElement(rows: number, columns: number, tabId: string): HTMLElement {
     // Create container
     const container = document.createElement('div');
     container.className = 'ga-spreadsheet-container';
     container.setAttribute('contenteditable', 'false');
+    
+    // Generate a unique ID for the spreadsheet
+    const spreadsheetId = `spreadsheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    container.setAttribute('data-spreadsheet-id', spreadsheetId);
+    
+    // Also store the tab ID to link this spreadsheet to its tab
+    container.setAttribute('data-tab-id', tabId);
     
     // Create column controls
     const columnControls = document.createElement('div');
@@ -150,24 +170,24 @@ export class SpreadsheetFormatter {
         cell.dataset.colIndex = j.toString();
         
         cell.addEventListener('keydown', (e) => {
-          this.userInteracted = true;
+          this.userInteracted.set(tabId, true);
           this.handleCellKeydown(e);
         });
         
         // Add focus and blur events for tracking
         cell.addEventListener('focus', (e) => {
-          this.currentFocusedCell = cell;
+          this.currentFocusedCells.set(tabId, cell);
         });
         
         cell.addEventListener('blur', (e) => {
-          if (this.currentFocusedCell === cell) {
-            this.currentFocusedCell = null;
+          if (this.currentFocusedCells.get(tabId) === cell) {
+            this.currentFocusedCells.set(tabId, null);
           }
         });
         
         // Add mousedown handler to ensure cell gets focus
         cell.addEventListener('mousedown', (e) => {
-          this.userInteracted = true;
+          this.userInteracted.set(tabId, true);
           e.stopPropagation();
           
           // Don't focus here as it can interfere with click event
@@ -181,12 +201,12 @@ export class SpreadsheetFormatter {
         
         // Add click handler to ensure cell maintains focus
         cell.addEventListener('click', (e) => {
-          this.userInteracted = true;
+          this.userInteracted.set(tabId, true);
           // Prevent event from bubbling up
           e.stopPropagation();
           
           // Ensure this cell gets focused - this is critical
-          this.currentFocusedCell = cell;
+          this.currentFocusedCells.set(tabId, cell);
           cell.focus();
           
           // Clear the shouldFocus flag
@@ -237,7 +257,7 @@ export class SpreadsheetFormatter {
     
     // Make the container selectable as a whole, but only if clicking directly on container or table
     container.addEventListener('click', (e) => {
-      this.userInteracted = true;
+      this.userInteracted.set(tabId, true);
       const target = e.target as HTMLElement;
       
       
@@ -369,6 +389,9 @@ export class SpreadsheetFormatter {
     const table = container.querySelector('table') as HTMLTableElement;
     if (!table) return;
     
+    // Get the tab ID from the container
+    const tabId = container.getAttribute('data-tab-id') || 'default';
+    
     // Add a cell to each row
     Array.from(table.rows).forEach((row, rowIndex) => {
       const cellIndex = row.cells.length;
@@ -380,31 +403,31 @@ export class SpreadsheetFormatter {
       
       // Add same event listeners as in createSpreadsheetElement
       cell.addEventListener('keydown', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         this.handleCellKeydown(e);
       });
       
       // Add focus and blur events for tracking
       cell.addEventListener('focus', (e) => {
-        this.currentFocusedCell = cell;
+        this.currentFocusedCells.set(tabId, cell);
       });
       
       cell.addEventListener('blur', (e) => {
-        if (this.currentFocusedCell === cell) {
-          this.currentFocusedCell = null;
+        if (this.currentFocusedCells.get(tabId) === cell) {
+          this.currentFocusedCells.set(tabId, null);
         }
       });
       
       cell.addEventListener('mousedown', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         e.stopPropagation();
         cell.dataset.shouldFocus = 'true';
       });
       
       cell.addEventListener('click', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         e.stopPropagation();
-        this.currentFocusedCell = cell;
+        this.currentFocusedCells.set(tabId, cell);
         cell.focus();
         
         // Simpler cursor placement logic
@@ -465,6 +488,9 @@ export class SpreadsheetFormatter {
     const table = container.querySelector('table') as HTMLTableElement;
     if (!table) return;
     
+    // Get the tab ID from the container
+    const tabId = container.getAttribute('data-tab-id') || 'default';
+    
     const rowIndex = table.rows.length;
     const columnCount = table.rows[0].cells.length;
     const newRow = table.insertRow();
@@ -479,31 +505,31 @@ export class SpreadsheetFormatter {
       
       // Add same event listeners as in createSpreadsheetElement
       cell.addEventListener('keydown', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         this.handleCellKeydown(e);
       });
       
       // Add focus and blur events for tracking
       cell.addEventListener('focus', (e) => {
-        this.currentFocusedCell = cell;
+        this.currentFocusedCells.set(tabId, cell);
       });
       
       cell.addEventListener('blur', (e) => {
-        if (this.currentFocusedCell === cell) {
-          this.currentFocusedCell = null;
+        if (this.currentFocusedCells.get(tabId) === cell) {
+          this.currentFocusedCells.set(tabId, null);
         }
       });
       
       cell.addEventListener('mousedown', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         e.stopPropagation();
         cell.dataset.shouldFocus = 'true';
       });
       
       cell.addEventListener('click', (e) => {
-        this.userInteracted = true;
+        this.userInteracted.set(tabId, true);
         e.stopPropagation();
-        this.currentFocusedCell = cell;
+        this.currentFocusedCells.set(tabId, cell);
         cell.focus();
         
         // Simpler cursor placement logic
@@ -556,11 +582,11 @@ export class SpreadsheetFormatter {
   /**
    * Focus the first cell in the spreadsheet
    */
-  private static focusFirstCell(spreadsheetElement: HTMLElement): void {
+  private static focusFirstCell(spreadsheetElement: HTMLElement, tabId: string): void {
     const firstCell = spreadsheetElement.querySelector('td') as HTMLTableCellElement;
     if (firstCell) {
       
-      this.currentFocusedCell = firstCell;
+      this.currentFocusedCells.set(tabId, firstCell);
       firstCell.focus();
     
       // Double-check focus in case it gets lost
@@ -576,19 +602,20 @@ export class SpreadsheetFormatter {
    * Select the entire spreadsheet
    */
   private static selectSpreadsheet(spreadsheetElement: HTMLElement): void {
+    // Get the tab ID from the container
+    const tabId = spreadsheetElement.getAttribute('data-tab-id') || 'default';
     
     const selection = window.getSelection();
     if (selection) {
       // Clear any current cell focus
-      if (this.currentFocusedCell && document.activeElement === this.currentFocusedCell) {
-        this.currentFocusedCell.blur();
+      if (this.currentFocusedCells.get(tabId) && document.activeElement === this.currentFocusedCells.get(tabId)) {
+        this.currentFocusedCells.set(tabId, null);
       }
       
       const range = document.createRange();
       range.selectNode(spreadsheetElement);
       selection.removeAllRanges();
       selection.addRange(range);
-      
     }
   }
   
@@ -600,17 +627,31 @@ export class SpreadsheetFormatter {
   }
   
   /**
-   * Get the current focused cell if any
+   * Get the current focused cell for a specific tab
    */
-  public static getCurrentFocusedCell(): HTMLTableCellElement | null {
-    return this.currentFocusedCell;
+  public static getCurrentFocusedCell(tabId: string): HTMLTableCellElement | null {
+    return this.currentFocusedCells.get(tabId) || null;
   }
   
   /**
-   * Set user interaction state (useful for external components)
+   * Set user interaction state for a specific tab
    */
-  public static setUserInteracted(value: boolean): void {
-    this.userInteracted = value;
+  public static setUserInteracted(tabId: string, value: boolean): void {
+    this.userInteracted.set(tabId, value);
+  }
+  
+  /**
+   * Regenerate the unique ID for a spreadsheet
+   * This is useful when we need to clone a spreadsheet
+   */
+  public static regenerateSpreadsheetId(spreadsheetElement: HTMLElement, newTabId?: string): void {
+    const newId = `spreadsheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    spreadsheetElement.setAttribute('data-spreadsheet-id', newId);
+    
+    // Update tab ID if provided
+    if (newTabId) {
+      spreadsheetElement.setAttribute('data-tab-id', newTabId);
+    }
   }
   
   /**
@@ -632,6 +673,12 @@ export class SpreadsheetFormatter {
         // Add a special attribute to mark this as a spreadsheet
         spreadsheet.setAttribute('data-spreadsheet', 'true');
         
+        // Ensure spreadsheet has a unique ID
+        if (!spreadsheet.hasAttribute('data-spreadsheet-id')) {
+          const spreadsheetId = `spreadsheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+          spreadsheet.setAttribute('data-spreadsheet-id', spreadsheetId);
+        }
+        
         // Store cell content as data attributes
         for (let i = 0; i < rows; i++) {
           const row = table.rows[i];
@@ -647,7 +694,7 @@ export class SpreadsheetFormatter {
   /**
    * Deserialize all spreadsheets in the content
    */
-  public static deserializeSpreadsheets(contentElement: HTMLElement): void {
+  public static deserializeSpreadsheets(contentElement: HTMLElement, tabId: string): void {
     if (!contentElement) return;
     
     const spreadsheets = contentElement.querySelectorAll('.ga-spreadsheet-container');
@@ -659,7 +706,16 @@ export class SpreadsheetFormatter {
         const columns = parseInt(spreadsheet.getAttribute('data-columns') || '2', 10);
         
         // Replace with a new fully functional spreadsheet
-        const newSpreadsheet = this.createSpreadsheetElement(rows, columns);
+        const newSpreadsheet = this.createSpreadsheetElement(rows, columns, tabId);
+        
+        // Copy the spreadsheet ID if it exists
+        const spreadsheetId = spreadsheet.getAttribute('data-spreadsheet-id');
+        if (spreadsheetId) {
+          newSpreadsheet.setAttribute('data-spreadsheet-id', spreadsheetId);
+        }
+        
+        // Explicitly set the tab ID
+        newSpreadsheet.setAttribute('data-tab-id', tabId);
         
         // Copy cell content from data attributes
         const oldTable = spreadsheet.querySelector('table');
@@ -689,7 +745,29 @@ export class SpreadsheetFormatter {
         
         // Replace the old spreadsheet with the new one
         spreadsheet.parentNode?.replaceChild(newSpreadsheet, spreadsheet);
+      } else {
+        // If the spreadsheet is already interactive, just update its tab ID
+        spreadsheet.setAttribute('data-tab-id', tabId);
       }
+    });
+  }
+  
+  /**
+   * Clone all spreadsheets in the content and ensure each has a unique ID
+   * This is useful when duplicating content between tabs
+   */
+  public static cloneSpreadsheets(contentElement: HTMLElement, newTabId: string): void {
+    if (!contentElement) return;
+    
+    const spreadsheets = contentElement.querySelectorAll('.ga-spreadsheet-container');
+    
+    spreadsheets.forEach(spreadsheet => {
+      // Generate a new unique ID for each spreadsheet
+      const newId = `spreadsheet-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      spreadsheet.setAttribute('data-spreadsheet-id', newId);
+      
+      // Update the tab ID to the new tab
+      spreadsheet.setAttribute('data-tab-id', newTabId);
     });
   }
 } 
