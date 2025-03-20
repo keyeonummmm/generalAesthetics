@@ -70,7 +70,8 @@
 /* Content Section */
 .ga-notes-container .content {
   flex: 1;
-  padding: var(--ga-spacing-unit);
+  /* padding-left: var(--ga-spacing-unit);
+  padding-right: var(--ga-spacing-unit); */
   overflow: auto;
   display: flex;
   flex-direction: column;

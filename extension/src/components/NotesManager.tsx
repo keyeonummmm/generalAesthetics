@@ -19,9 +19,32 @@ interface NoteItemProps {
   onDelete: (id: string) => void;
 }
 
+// Function to strip HTML tags from content while handling spreadsheets specially
+const stripHtmlTags = (html: string): string => {
+  // Create a temporary DOM element to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  // Find and replace spreadsheets with placeholder text
+  const spreadsheets = tempDiv.querySelectorAll('.ga-spreadsheet-container, [data-spreadsheet="true"]');
+  spreadsheets.forEach(spreadsheet => {
+    // Replace the spreadsheet with a placeholder
+    spreadsheet.textContent = "[Spreadsheet]";
+  });
+  
+  // Get the text content (this will include our spreadsheet placeholders)
+  let textContent = tempDiv.textContent || tempDiv.innerText || '';
+  
+  // For any remaining HTML tags, use regex to remove them
+  textContent = textContent.replace(/<[^>]*>/g, '');
+  
+  return textContent;
+};
+
 const NoteItem: React.FC<NoteItemProps> = ({ note, onEdit, onDelete }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const previewContent = note.content.slice(0, 30) + (note.content.length > 30 ? '...' : '');
+  const cleanedContent = stripHtmlTags(note.content);
+  const previewContent = cleanedContent.slice(0, 30) + (cleanedContent.length > 30 ? '...' : '');
 
   const handleDelete = () => {
     if (window.confirm('Are you sure you want to delete this note?')) {
