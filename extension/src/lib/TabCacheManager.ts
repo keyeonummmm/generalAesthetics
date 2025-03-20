@@ -16,6 +16,7 @@ export interface Tab {
   noteId?: string;
   lastEdited: string;
   pinned?: boolean;
+  spreadsheetData?: boolean;
 }
 
 export interface AttachmentReference {
@@ -148,9 +149,35 @@ export class TabCacheManager {
     const updatedTabs = [...cache.tabs];
     const existingTabIndex = updatedTabs.findIndex(t => t.id === tab.id);
     
+    // Ensure spreadsheetData flag is preserved or updated correctly
     if (existingTabIndex >= 0) {
+      // Check if the content has any spreadsheet data
+      const hasSpreadsheetData = tab.content && (
+        tab.content.includes('ga-spreadsheet-container') || 
+        /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(tab.content)
+      );
+      
+      // If the tab previously had spreadsheet data, preserve the spreadsheetData flag
+      if (updatedTabs[existingTabIndex].spreadsheetData) {
+        tab.spreadsheetData = true;
+      } else if (hasSpreadsheetData) {
+        // If the new content has spreadsheet data, set the flag
+        tab.spreadsheetData = true;
+      }
+      
       updatedTabs[existingTabIndex] = tab;
     } else {
+      // For new tabs, check if the content has any spreadsheet data
+      if (tab.content) {
+        const hasSpreadsheetData = 
+          tab.content.includes('ga-spreadsheet-container') || 
+          /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(tab.content);
+        
+        if (hasSpreadsheetData && tab.spreadsheetData !== true) {
+          tab.spreadsheetData = true;
+        }
+      }
+      
       updatedTabs.push(tab);
     }
 
@@ -588,6 +615,27 @@ export class TabCacheManager {
         });
         
         // Save the updated cache
+        await this.saveCache(latestCache);
+      }
+      
+      // Check each tab to ensure spreadsheetData flag is properly set
+      let requiresUpdate = false;
+      latestCache.tabs = latestCache.tabs.map((tab: Tab) => {
+        if (tab.content) {
+          const hasSpreadsheetData = 
+            tab.content.includes('ga-spreadsheet-container') || 
+            /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(tab.content);
+            
+          if (hasSpreadsheetData && tab.spreadsheetData !== true) {
+            requiresUpdate = true;
+            return { ...tab, spreadsheetData: true };
+          }
+        }
+        return tab;
+      });
+      
+      // If we updated any tabs, save the cache
+      if (requiresUpdate) {
         await this.saveCache(latestCache);
       }
       

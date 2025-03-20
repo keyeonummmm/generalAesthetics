@@ -89,7 +89,7 @@
   font-size: 16px;
   padding: 4px 8px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--border-color, #ddd);
   color: var(--text-color, #333);
   height: 36px;
   min-width: 36px;

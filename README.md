@@ -13,10 +13,11 @@ General Aesthetics Notes is a feature-rich browser extension that transforms how
 - **Rich Text Formatting**: Style your notes with various text formatting options
 - **Multi-tab Support**: Work with notes across different websites simultaneously
 - **Screenshot Capture**: Grab visual content directly into your notes
-- **URL Bookmarking**: Save and organize links within your notes
-- **Persistent Storage**: Access your notes anytime with reliable caching
-- **Tab Management**: Pin important tabs for quick access
+- **URL Bookmarking**: Save and organize URL links within your notes
+- **Persistent Caching**: No need to worry about losing content by accidentally closing the browser, you can instantly go back to where you last edited.
+- **Tab Management**: Pin important tabs for quick access across different websites
 - **List Creation**: Organize information with bulleted and numbered lists
+- **Spreadsheet**: Create and edit spreadsheets within your notes
 
 ## Installation
 
@@ -58,21 +59,6 @@ General Aesthetics Notes is a feature-rich browser extension that transforms how
 - Node.js (v14 or higher)
 - npm (v6 or higher)
 
-### Setup Development Environment
-```bash
-# Install dependencies
-npm install
-
-# Start development server with hot-reload
-npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
-```
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -84,3 +70,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Support
 
 If you encounter any issues or have questions, please file an issue on the GitHub repository.
+
+## Stubboen Bug:
+
+There is an issue involves empty spreadsheets disappearing when adding a title or switching tabs only when there's one exsisting tab, if more than 2 tabs are open, the issue will not happen. Sorry that I have not been able to fix it.

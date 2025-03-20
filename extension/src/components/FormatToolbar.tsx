@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TextFormatter } from '../lib/TextFormatter';
 import { ListFormatter } from '../lib/ListFormatter';
+import { SpreadsheetFormatter } from '../lib/SpreadsheetFormatter';
 import '../styles/components/format-toolbar.css';
 import '../styles/components/list-formatting.css';
+import '../styles/components/spreadsheet.css';
 
 // Toolbar options
 const FORMATTING_OPTIONS = [
@@ -39,11 +41,12 @@ const LIST_OPTIONS = [
 
 interface FormatToolbarProps {
   contentRef: React.RefObject<HTMLDivElement>;
-  onFormatChange?: () => void;
+  onFormatChange?: (event?: { type: string, isEmpty?: boolean }) => void;
   standalone?: boolean; // New prop to control rendering style
+  tabId: string; // Add tabId prop for SpreadsheetFormatter
 }
 
-const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange, standalone = false }) => {
+const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChange, standalone = false, tabId }) => {
   const [formatState, setFormatState] = useState<Record<string, string | boolean>>({});
   const [listFormatState, setListFormatState] = useState<{
     bulletedList: boolean;
@@ -60,6 +63,7 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Refs for popup positioning and click outside detection
   const formatButtonRef = useRef<HTMLButtonElement>(null);
   const listButtonRef = useRef<HTMLButtonElement>(null);
+  const spreadsheetButtonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const listPopupRef = useRef<HTMLDivElement>(null);
   
@@ -86,11 +90,11 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
       if (selection) {
         selection.removeAllRanges();
         selection.addRange(lastSelectionRef.current.cloneRange());
+        
+        
         return true;
       }
-    } catch (e) {
-      console.error('[FormatToolbar] Error restoring selection:', e);
-    }
+    } catch (e) {}
     return false;
   };
   
@@ -98,9 +102,11 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   useEffect(() => {
     if (contentRef.current && !isInitialized) {
       TextFormatter.initialize(contentRef.current);
+      // Initialize SpreadsheetFormatter with the tab ID
+      SpreadsheetFormatter.initialize(contentRef.current, tabId);
       setIsInitialized(true);
     }
-  }, [contentRef, isInitialized]);
+  }, [contentRef, isInitialized, tabId]);
   
   // Handle selection changes to update format state
   useEffect(() => {
@@ -124,6 +130,15 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
                              contentRef.current.contains(range.commonAncestorContainer.parentNode));
         
         if (!isInContent) {
+          return;
+        }
+        
+        // Check if we're in a spreadsheet cell
+        const inSpreadsheetCell = 
+          (range.commonAncestorContainer as Element)?.closest?.('.ga-spreadsheet-cell') ||
+          (range.commonAncestorContainer.parentElement as Element)?.closest?.('.ga-spreadsheet-cell');
+        
+        if (inSpreadsheetCell) {
           return;
         }
         
@@ -214,7 +229,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
       
       return result;
     } catch (error) {
-      console.error(`Error executing command: ${command}`, error);
       return false;
     }
   };
@@ -222,7 +236,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle formatting option click
   const handleFormatClick = (command: string) => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -303,7 +316,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle list formatting option click
   const handleListFormatClick = (command: string) => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -370,7 +382,6 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
   // Handle clearing all formatting
   const handleClearFormatting = () => {
     if (!contentRef.current) {
-      console.error('[FormatToolbar] No content element available');
       return;
     }
     
@@ -504,6 +515,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     e.preventDefault();
     e.stopPropagation();
     
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
+    
     // Apply formatting directly based on button title
     if (button.title === 'Bold') {
       applyFormatDirectly('bold');
@@ -528,6 +543,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     // Prevent default behavior and stop propagation to avoid losing focus
     e.preventDefault();
     e.stopPropagation();
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
   };
   
   // Add direct DOM event listeners when popup is shown
@@ -590,6 +608,158 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
     };
   }, [showListPopup]);
   
+  // Handle spreadsheet button click (placeholder for future implementation)
+  const handleSpreadsheetClick = () => {
+    if (!contentRef.current) {
+      return;
+    }
+    
+    // Notify SpreadsheetFormatter of user interaction
+    SpreadsheetFormatter.setUserInteracted(tabId, true);
+    
+    // Save current selection before applying format
+    saveSelection();
+    
+
+    // Focus the content area if not already focused
+    if (document.activeElement !== contentRef.current) {
+      contentRef.current.focus();
+      
+      // Give browser a moment to establish focus
+      setTimeout(() => {
+        // Restore selection if needed
+        if (lastSelectionRef.current) {
+          const restored = restoreSelection();
+
+          // Insert spreadsheet at selection
+          const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
+          
+          // Make sure to serialize the spreadsheet immediately after insertion
+          // This ensures the spreadsheet data is captured in the content
+          if (success && contentRef.current) {
+            setTimeout(() => {
+              if (contentRef.current) {
+                // First, serialize the spreadsheet to ensure it's captured in the content
+                SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+                
+                // Get the content with the serialized spreadsheet
+                const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+                
+                // Notify parent of format change with explicit spreadsheet flag
+                if (onFormatChange) {
+                  // Use a special event object to indicate this is a spreadsheet insertion
+                  onFormatChange({
+                    type: 'spreadsheet-insert',
+                    isEmpty: true
+                  });
+                }
+                
+                // Ensure the spreadsheet is fully interactive by deserializing it again
+                setTimeout(() => {
+                  if (contentRef.current) {
+                    SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                    // Refresh control handlers to ensure buttons work
+                    SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
+                  }
+                }, 0);
+              }
+            }, 50);
+          } else {
+            // Notify parent of format change anyway
+            if (onFormatChange) {
+              onFormatChange();
+            }
+          }
+        } else {
+          // Insert spreadsheet anyway
+          const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
+          
+          // Make sure to serialize the spreadsheet immediately after insertion
+          if (success && contentRef.current) {
+            setTimeout(() => {
+              if (contentRef.current) {
+                // First, serialize the spreadsheet to ensure it's captured in the content
+                SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+                
+                // Get the content with the serialized spreadsheet
+                const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+                
+                // Notify parent of format change with explicit spreadsheet flag
+                if (onFormatChange) {
+                  // Use a special event object to indicate this is a spreadsheet insertion
+                  onFormatChange({
+                    type: 'spreadsheet-insert',
+                    isEmpty: true
+                  });
+                }
+                
+                // Ensure the spreadsheet is fully interactive by deserializing it again
+                setTimeout(() => {
+                  if (contentRef.current) {
+                    SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                    // Refresh control handlers to ensure buttons work
+                    SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
+                  }
+                }, 0);
+              }
+            }, 50);
+          } else {
+            // Notify parent of format change anyway
+            if (onFormatChange) {
+              onFormatChange();
+            }
+          }
+        }
+      }, 10);
+      
+      return;
+    }
+    
+    // If already focused, restore selection if needed
+    if (lastSelectionRef.current) {
+      const restored = restoreSelection();
+    }
+    
+    // Insert spreadsheet
+    const success = SpreadsheetFormatter.insertSpreadsheet(tabId);
+    
+    // Make sure to serialize the spreadsheet immediately after insertion
+    if (success && contentRef.current) {
+      setTimeout(() => {
+        if (contentRef.current) {
+          // First, serialize the spreadsheet to ensure it's captured in the content
+          SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
+          
+          // Get the content with the serialized spreadsheet
+          const formattedContent = TextFormatter.getFormattedContent(contentRef.current);
+          
+          // Notify parent of format change with explicit spreadsheet flag
+          if (onFormatChange) {
+            // Use a special event object to indicate this is a spreadsheet insertion
+            onFormatChange({
+              type: 'spreadsheet-insert',
+              isEmpty: true
+            });
+          }
+          
+          // Ensure the spreadsheet is fully interactive by deserializing it again
+          setTimeout(() => {
+            if (contentRef.current) {
+              SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+              // Refresh control handlers to ensure buttons work
+              SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
+            }
+          }, 0);
+        }
+      }, 50);
+    } else {
+      // Notify parent of format change anyway
+      if (onFormatChange) {
+        onFormatChange();
+      }
+    }
+  };
+  
   // Render just the buttons if standalone mode is enabled
   if (standalone) {
     return (
@@ -612,6 +782,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           onClick={toggleListPopup}
         >
           ≡
+        </button>
+        
+        {/* Spreadsheet button */}
+        <button
+          ref={spreadsheetButtonRef}
+          className="format-button spreadsheet-button"
+          title="Spreadsheet"
+          onClick={handleSpreadsheetClick}
+        >
+          ⊞
         </button>
         
         {/* Format popup */}
@@ -699,6 +879,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
         onClick={toggleListPopup}
       >
         ≡
+      </button>
+      
+      {/* Spreadsheet button */}
+      <button
+        ref={spreadsheetButtonRef}
+        className="format-button spreadsheet-button"
+        title="Spreadsheet"
+        onClick={handleSpreadsheetClick}
+      >
+        ⊞
       </button>
       
       {/* Format popup */}

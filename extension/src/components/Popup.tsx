@@ -322,6 +322,7 @@ const Popup: React.FC = () => {
               contentRef={activeContentRef}
               onFormatChange={handleFormatChange}
               standalone={true}
+              tabId={activeNote.tabId}
             />
           )}
         </div>
