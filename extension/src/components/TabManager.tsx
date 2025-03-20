@@ -319,6 +319,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
             if (contentRef.current) {
               // Use tab-specific deserialization
               SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, activeTab.id);
+              
+              // Refresh control handlers to ensure buttons work
+              SpreadsheetFormatter.refreshControlHandlers(contentRef.current, activeTab.id);
             }
           }, 100);
         } else if (contentRef.current && !tabState?.initialized) {
@@ -1113,9 +1116,18 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
   }));
 
   const handleTabClick = (tabId: string) => {
+    // Don't do anything if we're already on this tab
+    if (tabId === activeTabId) return;
+    
     // First, serialize any spreadsheets in the current active tab if it exists
     const currentActiveTab = tabs.find(tab => tab.id === activeTabId);
     if (currentActiveTab && contentRef.current) {
+      // Before serializing, ensure all spreadsheets have the current tab ID
+      const spreadsheets = contentRef.current.querySelectorAll('.ga-spreadsheet-container');
+      spreadsheets.forEach(spreadsheet => {
+        spreadsheet.setAttribute('data-tab-id', activeTabId);
+      });
+      
       // Serialize spreadsheets before switching tabs
       SpreadsheetFormatter.serializeSpreadsheets(contentRef.current);
       
@@ -1127,6 +1139,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
           syncStatus: 'pending'
         }, false, false);
       }
+      
+      // Explicitly clean up resources for the active tab
+      SpreadsheetFormatter.cleanup(activeTabId);
     }
     
     setActiveTabId(tabId);
@@ -1142,16 +1157,18 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     
     // Schedule deserialization of spreadsheets after the tab content is rendered
     setTimeout(() => {
-      if (contentRef.current && tab?.spreadsheetData) {
-        // Check if we need to initialize this tab
-        if (!tabContentRefsMap.current.has(tabId)) {
-          // Initialize the formatter specifically for this tab
-          SpreadsheetFormatter.initialize(contentRef.current, tabId);
-          tabContentRefsMap.current.set(tabId, { initialized: true });
-        }
+      if (contentRef.current && tab) {
+        // Always initialize the formatter for this tab to ensure a clean state
+        SpreadsheetFormatter.initialize(contentRef.current, tabId);
+        tabContentRefsMap.current.set(tabId, { initialized: true });
         
-        // Deserialize spreadsheets with tab-specific context
-        SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+        // Deserialize any spreadsheets in the tab
+        if (tab.spreadsheetData) {
+          SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+          
+          // Refresh control handlers to ensure buttons work
+          SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
+        }
       }
     }, 100);
   };
@@ -1545,6 +1562,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                 }
                 
                 SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, activeTab.id);
+                
+                // Refresh control handlers to ensure buttons work
+                SpreadsheetFormatter.refreshControlHandlers(contentRef.current, activeTab.id);
               }
             }, 100);
           }
@@ -1578,6 +1598,9 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
                   }
                   
                   SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, activeTab.id);
+                  
+                  // Refresh control handlers to ensure buttons work
+                  SpreadsheetFormatter.refreshControlHandlers(contentRef.current, activeTab.id);
                 }
               }, 100);
             }

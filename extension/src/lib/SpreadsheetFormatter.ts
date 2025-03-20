@@ -466,6 +466,10 @@ export class SpreadsheetFormatter {
       
       row.appendChild(cell);
     });
+    
+    // Update data attributes to reflect new column count
+    const columns = table.rows[0]?.cells.length || 0;
+    container.setAttribute('data-columns', columns.toString());
   }
   
   /**
@@ -479,6 +483,10 @@ export class SpreadsheetFormatter {
     Array.from(table.rows).forEach(row => {
       row.deleteCell(row.cells.length - 1);
     });
+    
+    // Update data attributes to reflect new column count
+    const columns = table.rows[0]?.cells.length || 0;
+    container.setAttribute('data-columns', columns.toString());
   }
   
   /**
@@ -666,10 +674,8 @@ export class SpreadsheetFormatter {
       const table = spreadsheet.querySelector('table');
       if (table) {
         // Set data attributes for rows and columns to help with deserialization
-        const rows = table.rows.length;
-        const columns = table.rows[0].cells.length;
-        spreadsheet.setAttribute('data-rows', rows.toString());
-        spreadsheet.setAttribute('data-columns', columns.toString());
+        spreadsheet.setAttribute('data-rows', table.rows.length.toString());
+        spreadsheet.setAttribute('data-columns', table.rows[0]?.cells.length.toString() || '2');
         // Add a special attribute to mark this as a spreadsheet
         spreadsheet.setAttribute('data-spreadsheet', 'true');
         
@@ -680,9 +686,9 @@ export class SpreadsheetFormatter {
         }
         
         // Store cell content as data attributes
-        for (let i = 0; i < rows; i++) {
+        for (let i = 0; i < table.rows.length; i++) {
           const row = table.rows[i];
-          for (let j = 0; j < columns; j++) {
+          for (let j = 0; j < row.cells.length; j++) {
             const cell = row.cells[j];
             cell.setAttribute('data-content', cell.innerHTML);
           }
@@ -742,12 +748,69 @@ export class SpreadsheetFormatter {
             }
           }
         }
-        
         // Replace the old spreadsheet with the new one
         spreadsheet.parentNode?.replaceChild(newSpreadsheet, spreadsheet);
-      } else {
-        // If the spreadsheet is already interactive, just update its tab ID
-        spreadsheet.setAttribute('data-tab-id', tabId);
+      }
+    });
+  }
+  
+  /**
+   * Refresh control handlers for all spreadsheets in the content
+   * This is useful when switching tabs to ensure the add/remove buttons have fresh event handlers
+   */
+  public static refreshControlHandlers(contentElement: HTMLElement, tabId: string): void {
+    if (!contentElement) return;
+    
+    const spreadsheets = contentElement.querySelectorAll('.ga-spreadsheet-container');
+    
+    spreadsheets.forEach(spreadsheet => {
+      // Get the container reference
+      const container = spreadsheet as HTMLElement;
+      
+      // Refresh column control buttons
+      const addColumnBtn = container.querySelector('.ga-spreadsheet-column-controls .ga-spreadsheet-control-btn:nth-child(2)');
+      const removeColumnBtn = container.querySelector('.ga-spreadsheet-column-controls .ga-spreadsheet-control-btn:nth-child(1)');
+      
+      // Refresh row control buttons
+      const addRowBtn = container.querySelector('.ga-spreadsheet-row-controls .ga-spreadsheet-control-btn:nth-child(2)');
+      const removeRowBtn = container.querySelector('.ga-spreadsheet-row-controls .ga-spreadsheet-control-btn:nth-child(1)');
+      
+      // Clear and reattach event listeners for column controls
+      if (addColumnBtn) {
+        const newAddColumnBtn = addColumnBtn.cloneNode(true) as HTMLElement;
+        addColumnBtn.replaceWith(newAddColumnBtn);
+        newAddColumnBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.addColumn(container);
+        });
+      }
+      
+      if (removeColumnBtn) {
+        const newRemoveColumnBtn = removeColumnBtn.cloneNode(true) as HTMLElement;
+        removeColumnBtn.replaceWith(newRemoveColumnBtn);
+        newRemoveColumnBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.removeColumn(container);
+        });
+      }
+      
+      // Clear and reattach event listeners for row controls
+      if (addRowBtn) {
+        const newAddRowBtn = addRowBtn.cloneNode(true) as HTMLElement;
+        addRowBtn.replaceWith(newAddRowBtn);
+        newAddRowBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.addRow(container);
+        });
+      }
+      
+      if (removeRowBtn) {
+        const newRemoveRowBtn = removeRowBtn.cloneNode(true) as HTMLElement;
+        removeRowBtn.replaceWith(newRemoveRowBtn);
+        newRemoveRowBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.removeRow(container);
+        });
       }
     });
   }

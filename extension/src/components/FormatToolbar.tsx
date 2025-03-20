@@ -658,6 +658,8 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
                 setTimeout(() => {
                   if (contentRef.current) {
                     SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                    // Refresh control handlers to ensure buttons work
+                    SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
                   }
                 }, 0);
               }
@@ -695,6 +697,8 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
                 setTimeout(() => {
                   if (contentRef.current) {
                     SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                    // Refresh control handlers to ensure buttons work
+                    SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
                   }
                 }, 0);
               }
@@ -742,6 +746,8 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({ contentRef, onFormatChang
           setTimeout(() => {
             if (contentRef.current) {
               SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+              // Refresh control handlers to ensure buttons work
+              SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
             }
           }, 0);
         }

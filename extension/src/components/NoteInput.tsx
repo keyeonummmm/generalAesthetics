@@ -103,6 +103,8 @@ const NoteInput: React.FC<NoteInputProps> = ({
         setTimeout(() => {
           if (contentRef.current) {
             SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+            // Refresh control handlers to ensure buttons work
+            SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
           }
         }, 0);
       }
@@ -452,6 +454,8 @@ const NoteInput: React.FC<NoteInputProps> = ({
             setTimeout(() => {
               if (contentRef.current) {
                 SpreadsheetFormatter.deserializeSpreadsheets(contentRef.current, tabId);
+                // Refresh control handlers to ensure buttons work
+                SpreadsheetFormatter.refreshControlHandlers(contentRef.current, tabId);
               }
             }, 0);
           } else {
