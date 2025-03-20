@@ -1,7 +1,0 @@
-<extension_style>
-    The extension page should be simple and clean, black and white minimalist style, using black lines to Mock up a notebook, sticker style.
-</extension_style>
-
-<web_app_style>
-    The web app should be syncronized with the extension, using the same style as the extension. There is only one main interface, and different functions are completed in different sections of this main interface.
-</web_app_style>

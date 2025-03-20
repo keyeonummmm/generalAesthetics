@@ -1233,10 +1233,21 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
 
   // Update handlers using unified update function
   const handleTitleChange = (tabId: string, title: string) => {
-    updateTabState(tabId, {
+    // Get the existing tab to check if it has spreadsheet data
+    const existingTab = tabs.find(tab => tab.id === tabId);
+    
+    // Create update object with title and sync status
+    const updates: Partial<Tab> = {
       title,
       syncStatus: 'pending'
-    });
+    };
+    
+    // Preserve the spreadsheetData flag if it exists
+    if (existingTab?.spreadsheetData) {
+      updates.spreadsheetData = true;
+    }
+    
+    updateTabState(tabId, updates);
   };
   
   const handleContentChange = (tabId: string, content: string) => {
@@ -1254,9 +1265,7 @@ const TabManager = forwardRef<TabManagerRef, TabManagerProps>(({
     
     // If the tab already had spreadsheet data, preserve that information
     const existingTab = tabs.find(tab => tab.id === tabId);
-    if (existingTab?.spreadsheetData && content.trim().length > 0) {
-      // If we previously had spreadsheet data and there's still content, 
-      // preserve the spreadsheetData flag unless we're certain it's gone
+    if (existingTab?.spreadsheetData) {
       hasSpreadsheet = true;
     }
     

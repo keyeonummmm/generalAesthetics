@@ -157,9 +157,8 @@ export class TabCacheManager {
         /<div[^>]*class=[^>]*ga-spreadsheet[^>]*>|data-rows|data-columns|data-spreadsheet="true"/.test(tab.content)
       );
       
-      // If the tab previously had spreadsheet data, and content hasn't been cleared, 
-      // preserve the spreadsheetData flag
-      if (updatedTabs[existingTabIndex].spreadsheetData && tab.content && tab.content.trim().length > 0) {
+      // If the tab previously had spreadsheet data, preserve the spreadsheetData flag
+      if (updatedTabs[existingTabIndex].spreadsheetData) {
         tab.spreadsheetData = true;
       } else if (hasSpreadsheetData) {
         // If the new content has spreadsheet data, set the flag
