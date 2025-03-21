@@ -54,7 +54,7 @@
 
 /* Collapsed state */
 .ga-notes-container .attachments-section.collapsed {
-  width: 20px;
+  width: 35px;
   overflow: hidden;
   position: absolute;
   right: 0;
