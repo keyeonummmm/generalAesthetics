@@ -44,3 +44,7 @@ docker-volumes/
 .editorconfig
 .eslintrc.json
 .prettierrc
+
+#Chrome
+extension/dist.crx
+extension/dist.pem

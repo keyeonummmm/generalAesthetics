@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "General Aesthetics Notes",
   "version": "1.0.0",
-  "description": "A browser extension for quick note-taking with rich text formatting",
+  "description": "A lightweight Chrome extension for any purpose of note-taking and resource management across multiple web pages",
+  "author": "Chaoran Zhou",
   
   "action": {
     "default_icon": "icons/icon128.png"
@@ -28,10 +29,6 @@
     "unlimitedStorage",
     "clipboardRead",
     "clipboardWrite"
-  ],
-
-  "host_permissions": [
-    "http://localhost:8080/*"
   ],
 
   "icons": {

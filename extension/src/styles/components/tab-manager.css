@@ -39,7 +39,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   position: relative;
-  border-radius: 4px;
 }
 
 .ga-notes-container .tab.active {
@@ -116,11 +115,6 @@
   overflow: hidden; /* Prevent wrapper from scrolling */
   position: relative; /* For positioning the collapsed attachment section */
 }
-
-/* Add styles for tab wrapper with attachments */
-/* .ga-notes-container .tab-wrapper.has-attachments {
-  No specific styles needed here, but the class is useful for potential future styling
-} */
 
 .ga-notes-container .new-tab-button {
   padding: 4px 8px;

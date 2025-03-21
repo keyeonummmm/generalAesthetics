@@ -358,4 +358,4 @@ export class ListFormatter {
     // Check if the list item is empty
     return !listItem.textContent || listItem.textContent.trim() === '';
   }
-} 
+}
