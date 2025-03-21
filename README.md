@@ -1,23 +1,16 @@
 # General Aesthetics Notes
 
-A powerful Chrome extension for enhanced note-taking across multiple web pages.
+A lightweight Chrome extension for any purpose of note-taking and resource management across multiple web pages.
 
 ![General Aesthetics Notes](extension/icons/icon128.png)
 
-## Overview
-
-General Aesthetics Notes is a feature-rich browser extension that transforms how you take notes while browsing. Designed for researchers, students, and professionals who need to collect and organize information from multiple web sources simultaneously.
-
 ## Key Features
 
-- **Rich Text Formatting**: Style your notes with various text formatting options
 - **Multi-tab Support**: Work with notes across different websites simultaneously
-- **Screenshot Capture**: Grab visual content directly into your notes
-- **URL Bookmarking**: Save and organize URL links within your notes
-- **Persistent Caching**: No need to worry about losing content by accidentally closing the browser, you can instantly go back to where you last edited.
-- **Tab Management**: Pin important tabs for quick access across different websites
-- **List Creation**: Organize information with bulleted and numbered lists
-- **Spreadsheet**: Create and edit spreadsheets within your notes
+- **Screenshot Capture**: Grab visual content directly into notes
+- **URL Bookmarking**: Save any URL with notes
+- **Content Safety**: No need to worry about losing content by accidentally closing the browser, you can instantly go back to where you last edited.
+- **Formatting**: Text Styling, List Creation, Spreadsheet, etc.
 
 ## Installation
 
