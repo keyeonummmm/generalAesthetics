@@ -26,9 +26,7 @@
     "activeTab",
     "scripting",
     "tabs",
-    "unlimitedStorage",
-    "clipboardRead",
-    "clipboardWrite"
+    "unlimitedStorage"
   ],
 
   "icons": {
@@ -37,7 +35,7 @@
   
   "web_accessible_resources": [
     {
-      "resources": ["*.js", "*.chunk.js"],
+      "resources": ["*.js"],
       "matches": ["<all_urls>"]
     }
   ]
